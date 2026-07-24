@@ -1,0 +1,57 @@
+# Local infra for the auction platform (build-order step 0).
+# One Postgres instance, DB-per-service (ADR: logical isolation, physical co-location).
+# ponytail: no Redis/observability yet — added when a service needs them.
+services:
+  postgres:
+    image: postgres:16
+    container_name: auction-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-auction}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auction}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # creates one database per service + one for Keycloak
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-auction}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: auction-rabbitmq
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # management UI (guest/guest)
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: auction-keycloak
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-auction}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-auction}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"  # admin console + issuer. NOTE: gateway must use another port later.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
