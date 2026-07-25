@@ -2,11 +2,9 @@ package com.auction.userservice.controller;
 
 import com.auction.userservice.dto.RegisterRequest;
 import com.auction.userservice.dto.UserResponse;
-import com.auction.userservice.model.User;
 import com.auction.userservice.service.UserService;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 @AllArgsConstructor
 public class UserController {
 
-    @Autowired
     private UserService userService;
 
     @GetMapping("/{userId}")
@@ -28,8 +25,9 @@ public class UserController {
         return ResponseEntity.ok(userService.register(request));
     }
 
-    @DeleteMapping()
-    public ResponseEntity<User> deleteProfile() {
-        return ResponseEntity.status(204).build();
+    @DeleteMapping("/{userId}")
+    public ResponseEntity<Void> deleteProfile(@PathVariable String userId) {
+        userService.deleteProfile(userId);
+        return ResponseEntity.noContent().build();
     }
 }

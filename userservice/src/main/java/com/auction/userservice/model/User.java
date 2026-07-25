@@ -3,8 +3,8 @@ package com.auction.userservice.model;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -26,6 +26,8 @@ public class User {
 
     @CreationTimestamp
     private LocalDateTime createdDate;
-    private LocalDate updatedAt;
+
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
 
 }

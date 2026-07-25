@@ -1,6 +1,3 @@
-# Local infra for the auction platform (build-order step 0).
-# One Postgres instance, DB-per-service (ADR: logical isolation, physical co-location).
-# ponytail: no Redis/observability yet — added when a service needs them.
 services:
   postgres:
     image: postgres:16

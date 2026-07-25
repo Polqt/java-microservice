@@ -8,11 +8,11 @@ Scaffold each service at https://start.spring.io. Coding is yours; this only get
 |---|---|
 | Project | Maven |
 | Language | Java |
-| Spring Boot | **3.4.x** (ADR-0005) |
-| Java | **21** |
+| Spring Boot | **4.1.x** (ADR-0005) |
+| Java | **21** (LTS — not 25) |
 | Group | `com.auction` |
 | Packaging | Jar |
-| Spring Cloud train | **2024.0.x** (aligns with Boot 3.4 — set via the Spring Cloud BOM, Initializr picks it when you add a cloud dep) |
+| Spring Cloud train | **2025.0.x** (aligns with Boot 4.1 — set via the Spring Cloud BOM, Initializr picks it when you add a cloud dep) |
 
 Artifact = service name (`userservice`, `auctionservice`, ...). Rename existing `com.fitness` → `com.auction`.
 
