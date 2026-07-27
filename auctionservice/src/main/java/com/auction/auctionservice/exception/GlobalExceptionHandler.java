@@ -31,7 +31,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ProblemDetail handleOptimisticLockingFailureException(OptimisticLockingFailureException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Another bid was accepted first");
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Concurrent Auction update");
     }
 
     @ExceptionHandler(BidBelowStartingPriceException.class)
@@ -40,5 +40,10 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_CONTENT,
                 exception.getMessage()
         );
+    }
+
+    @ExceptionHandler(AuctionCloseTooEarlyException.class)
+    public ProblemDetail handleAuctionCloseTooEarlyException(AuctionCloseTooEarlyException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(403), ex.getMessage());
     }
 }

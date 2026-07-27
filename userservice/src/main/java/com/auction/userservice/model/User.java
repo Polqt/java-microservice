@@ -21,9 +21,6 @@ public class User {
     private String firstName;
     private String lastName;
 
-    @Enumerated(EnumType.STRING)
-    private UserRole role =  UserRole.BUYER;
-
     @CreationTimestamp
     private LocalDateTime createdDate;
 

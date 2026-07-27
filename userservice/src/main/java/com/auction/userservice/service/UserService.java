@@ -6,14 +6,15 @@ import com.auction.userservice.exception.EmailAlreadyExistsException;
 import com.auction.userservice.exception.UserNotFoundException;
 import com.auction.userservice.model.User;
 import com.auction.userservice.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 
 @Service
+@RequiredArgsConstructor
 public class UserService {
 
-    private UserRepository repository;
+    private final UserRepository repository;
 
     public UserResponse register(RegisterRequest request) {
 
@@ -33,7 +34,7 @@ public class UserService {
         response.setFirstName(savedUser.getFirstName());
         response.setLastName(savedUser.getLastName());
         response.setCreatedDate(savedUser.getCreatedDate());
-        response.setUpdatedAt(LocalDate.from(savedUser.getUpdatedAt()));
+        response.setUpdatedAt(savedUser.getUpdatedAt());
         return response;
     }
 
@@ -46,7 +47,7 @@ public class UserService {
         response.setFirstName(user.getFirstName());
         response.setLastName(user.getLastName());
         response.setCreatedDate(user.getCreatedDate());
-        response.setUpdatedAt(LocalDate.from(user.getUpdatedAt()));
+        response.setUpdatedAt(user.getUpdatedAt());
         return response;
     }
 

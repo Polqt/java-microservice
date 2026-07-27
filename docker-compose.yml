@@ -44,7 +44,7 @@ services:
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-auction}
       KC_HEALTH_ENABLED: "true"
     ports:
-      - "8080:8080"  # admin console + issuer. NOTE: gateway must use another port later.
+      - "8180:8080"  # admin console + issuer. NOTE: gateway must use another port later.
     depends_on:
       postgres:
         condition: service_healthy

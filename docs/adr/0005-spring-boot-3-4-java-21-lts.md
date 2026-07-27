@@ -1,3 +1,0 @@
-# Target Spring Boot 4.1 + Java 21 LTS
-
-We build on Spring Boot 4.1 with Java 21 (LTS), not Java 25. Java 21 is the current LTS and what most employers run; matching the runtime JDK to the compile target also avoids class-version mismatches (Java 25 bytecode is v69, unreadable by a JDK 21 runtime). We keep Boot 4.1 rather than dropping to Boot 3.4: the developer chose to stay on the latest Boot for the learning value, accepting the trade-off that Boot 4 has fewer tutorials/community answers and requires the **Spring Cloud 2025.x** release train for Eureka/Gateway (Boot 3.4 would have used 2024.x). Boot 4 also uses modular starter names — `spring-boot-starter-webmvc`, not `spring-boot-starter-web`.

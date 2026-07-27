@@ -6,7 +6,6 @@ import lombok.Data;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Entity
@@ -18,7 +17,7 @@ public class Auction {
     private String id;
 
     @Version
-    private Instant version;
+    private Long version;
 
     private String sellerId;
 
@@ -36,6 +35,9 @@ public class Auction {
 
     private LocalDateTime startAt;
     private LocalDateTime endAt;
+
+    @Nullable
+    private LocalDateTime closedAt;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

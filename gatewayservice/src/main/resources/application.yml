@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gatewayservice
+
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: userservice
+              uri: lb://userservice
+              predicates:
+                - Path=/api/users/**
+
+            - id: auctionservice
+              uri: lb://auctionservice
+              predicates:
+                - Path=/api/auctions/**
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}

@@ -1,6 +1,7 @@
 package com.auction.auctionservice.controller;
 
 import com.auction.auctionservice.dto.BidResponse;
+import com.auction.auctionservice.dto.CloseAuctionResponse;
 import com.auction.auctionservice.dto.PlaceBidRequest;
 import com.auction.auctionservice.service.AuctionService;
 import jakarta.validation.Valid;
@@ -30,5 +31,10 @@ public class AuctionController {
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+
+     @PostMapping("/{auctionId}/close")
+     public ResponseEntity<CloseAuctionResponse> closeAuction(@PathVariable String auctionId) {
+        return ResponseEntity.ok(auctionService.closeAuction(auctionId));
+     }
 
 }
