@@ -1,0 +1,47 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: agentservice
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:agentservice}
+    username: ${POSTGRES_USER:auction}
+    password: ${POSTGRES_PASSWORD:auction}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/auction}
+
+      client:
+        registration:
+          auctionservice:
+            provider: keycloak
+            client-id: agentservice
+            client-secret: ${AGENTSERVICE_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/auction}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+clients:
+  auctionservice:
+    base-url: ${AUCTIONSERVICE_BASE_URL:http://localhost:8082}

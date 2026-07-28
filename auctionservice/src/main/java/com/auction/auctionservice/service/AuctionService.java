@@ -1,5 +1,6 @@
 package com.auction.auctionservice.service;
 
+import com.auction.auctionservice.dto.AuctionBidStateResponse;
 import com.auction.auctionservice.dto.BidResponse;
 import com.auction.auctionservice.dto.CloseAuctionResponse;
 import com.auction.auctionservice.exception.*;
@@ -14,6 +15,7 @@ import com.auction.auctionservice.event.AuctionClosedEvent;
 import com.auction.auctionservice.event.DealCreatedEvent;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -27,6 +29,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@EnableMethodSecurity
 public class AuctionService {
 
     private final AuctionRepository auctionRepository;
@@ -160,6 +163,23 @@ public class AuctionService {
         }
 
         return toCloseAuctionResponse(auction, deal);
+    }
+
+    @Transactional
+    public AuctionBidStateResponse getBidState(String auctionId) {
+        Auction auction = auctionRepository.findById(auctionId)
+                .orElseThrow(() -> new AuctionNotFoundException(auctionId));
+
+        return new AuctionBidStateResponse(
+                auction.getId(),
+                auction.getStartingPrice(),
+                auction.getCurrentPrice(),
+                auction.getMinIncrement(),
+                auction.getStatus(),
+                auction.getStartAt(),
+                auction.getEndAt(),
+                auction.getHighestBidderId()
+        );
     }
 
     private CloseAuctionResponse toCloseAuctionResponse(Auction auction, Deal deal) {
