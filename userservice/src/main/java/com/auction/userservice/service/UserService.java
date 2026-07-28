@@ -1,8 +1,10 @@
 package com.auction.userservice.service;
 
 import com.auction.userservice.dto.RegisterRequest;
+import com.auction.userservice.dto.UpdateProfileRequest;
 import com.auction.userservice.dto.UserResponse;
 import com.auction.userservice.exception.EmailAlreadyExistsException;
+import com.auction.userservice.exception.UserAlreadyExistsException;
 import com.auction.userservice.exception.UserNotFoundException;
 import com.auction.userservice.model.User;
 import com.auction.userservice.repository.UserRepository;
@@ -16,31 +18,54 @@ public class UserService {
 
     private final UserRepository repository;
 
-    public UserResponse register(RegisterRequest request) {
+    public UserResponse register(String userId, String email, RegisterRequest request) {
+        if (repository.existsById(userId)) {
+            throw new UserAlreadyExistsException(userId);
+        }
 
-         if (repository.existsByEmail(request.getEmail())) {
-             throw new EmailAlreadyExistsException(request.getEmail());
+         if (repository.existsByEmail(email)) {
+             throw new EmailAlreadyExistsException(email);
          }
 
         User user = new User();
-        user.setEmail(request.getEmail());
+        user.setId(userId);
+        user.setEmail(email);
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
-        User savedUser = repository.save(user);
-        UserResponse response = new UserResponse();
 
-        response.setId(savedUser.getId());
-        response.setEmail(savedUser.getEmail());
-        response.setFirstName(savedUser.getFirstName());
-        response.setLastName(savedUser.getLastName());
-        response.setCreatedDate(savedUser.getCreatedDate());
-        response.setUpdatedAt(savedUser.getUpdatedAt());
-        return response;
+        User savedUser = repository.save(user);
+        return toResponse(savedUser);
     }
 
     public UserResponse getUserProfile(String userId) {
         User user = repository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
+        return toResponse(user);
+    }
+    public UserResponse editProfile(String userId, UpdateProfileRequest request) {
+        User user =repository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        if (request.getFirstName() != null) {
+            user.setFirstName(request.getFirstName());
+        }
+
+        if (request.getLastName() != null) {
+            user.setLastName(request.getLastName());
+        }
+
+        User savedUser = repository.saveAndFlush(user);
+
+        return toResponse(savedUser);
+    }
+
+    public void deleteProfile(String userId) {
+        User user = repository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        repository.delete(user);
+    }
+
+    private UserResponse toResponse(User user) {
         UserResponse response = new UserResponse();
         response.setId(user.getId());
         response.setEmail(user.getEmail());
@@ -49,11 +74,5 @@ public class UserService {
         response.setCreatedDate(user.getCreatedDate());
         response.setUpdatedAt(user.getUpdatedAt());
         return response;
-    }
-
-    public void deleteProfile(String userId) {
-        User user = repository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException(userId));
-        repository.delete(user);
     }
 }

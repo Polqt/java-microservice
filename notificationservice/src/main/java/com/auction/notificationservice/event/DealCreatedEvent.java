@@ -1,4 +1,4 @@
-package com.auction.auctionservice.event;
+package com.auction.notificationservice.event;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

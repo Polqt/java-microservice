@@ -34,7 +34,9 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     container_name: auction-keycloak
-    command: start-dev
+    command: start-dev --import-realm
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -44,7 +46,7 @@ services:
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-auction}
       KC_HEALTH_ENABLED: "true"
     ports:
-      - "8180:8080"  # admin console + issuer. NOTE: gateway must use another port later.
+      - "8180:8080"  # admin console + issuer
     depends_on:
       postgres:
         condition: service_healthy

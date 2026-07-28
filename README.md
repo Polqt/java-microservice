@@ -27,9 +27,9 @@ The same mechanism guarantees **exactly-once close**: concurrent close attempts 
 ## Architecture
 
 ```
-                    ┌──────────┐
-                    │ gateway  │  Spring Cloud Gateway — routing, JWT validation
-                    └────┬─────┘
+                 ┌────────────────┐
+                 │ gatewayservice │  Spring Cloud Gateway — routing, JWT validation
+                 └───────┬────────┘
                          │
         ┌────────────────┼────────────────┐
         │                │                │
@@ -43,23 +43,23 @@ The same mechanism guarantees **exactly-once close**: concurrent close attempts 
       │agentservice│ │aiservice│ │notificationservice│
       └──────────┘ └──────────┘ └──────────────────┘
 
-  discovery (Eureka) — service registry
+  discoveryservice (Eureka) — service registry
 ```
 
 **Bidding lives inside `auctionservice`, not its own service.** Bids and auction state share one consistency boundary; splitting them would force a distributed lock for no benefit ([ADR-0001](docs/adr/0001-bidding-inside-auction-service.md)).
 
 ### Services
 
-| Service | Status | Responsibility |
-|---|---|---|
-| `userservice` | built | Profiles, contacts, roles |
-| `auctionservice` | in progress | Auctions, bidding, close, winner selection, deals |
-| `discovery` | planned | Eureka service registry |
-| `gateway` | planned | Entry point, routing, JWT validation |
-| `agentservice` | planned | Autonomous proxy bidders (rules-first) |
-| `aiservice` | planned | Gemini advisory, behind a circuit breaker |
-| `notificationservice` | planned | Event consumer — outbid, closing, won |
-| `chatservice` | planned | 1:1 text chat, unlocked after close |
+| Service | Port | Status | Responsibility |
+|---|---|---|---|
+| `discoveryservice` | 8761 | built | Eureka service registry |
+| `gatewayservice` | 8080 | built | Entry point, routing, JWT validation |
+| `userservice` | — | built | Profiles, contacts, roles |
+| `auctionservice` | — | in progress | Auctions, bidding, close, winner selection, deals |
+| `agentservice` | — | planned | Autonomous proxy bidders (rules-first) |
+| `aiservice` | — | planned | Gemini advisory, behind a circuit breaker |
+| `notificationservice` | — | planned | Event consumer — outbid, closing, won |
+| `chatservice` | — | planned | 1:1 text chat, unlocked after close |
 
 ### Events
 
@@ -148,4 +148,6 @@ Responses use RFC 9457 `ProblemDetail`.
 
 ## Status
 
-Early. `userservice` and the `auctionservice` bidding and close paths are implemented; the concurrency test, remaining services, frontend, and deployment are still ahead.
+Early. Discovery, gateway, `userservice`, and the `auctionservice` bidding and close paths are implemented; the concurrency test, remaining services, frontend, and deployment are still ahead.
+
+Start services in this order: `discoveryservice` → `gatewayservice` → the rest.
