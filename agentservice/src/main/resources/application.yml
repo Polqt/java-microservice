@@ -45,3 +45,8 @@ eureka:
 clients:
   auctionservice:
     base-url: ${AUCTIONSERVICE_BASE_URL:http://localhost:8082}
+
+proxy-bidder:
+  retry:
+    delay-ms: ${PROXY_BIDDER_RETRY_DELAY_MS:2000}
+    max-attempts: ${PROXY_BIDDER_RETRY_MAX_ATTEMPTS:3}

@@ -5,6 +5,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -43,6 +44,9 @@ public class ProxyBidderReaction {
     @Column(nullable = false)
     private int attemptCount;
 
+    @Column(nullable = false)
+    private LocalDateTime nextAttemptAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProxyBidderReactionOutcome outcome;
@@ -71,10 +75,17 @@ public class ProxyBidderReaction {
         this.proposedAmount = proposedAmount;
         this.attemptCount = 0;
         this.outcome = ProxyBidderReactionOutcome.PENDING;
+        this.nextAttemptAt = LocalDateTime.now();
     }
 
     public void recordAttempt() {
         this.attemptCount++;
+    }
+
+    public void backOff(Duration baseDelay) {
+        long multiplier = 1L << Math.min(attemptCount, 10);
+        this.nextAttemptAt = LocalDateTime.now()
+                .plus(baseDelay.multipliedBy(multiplier));
     }
 
     public void markSucceeded() {
@@ -119,6 +130,10 @@ public class ProxyBidderReaction {
 
     public int getAttemptCount() {
         return attemptCount;
+    }
+
+    public LocalDateTime getNextAttemptAt() {
+        return nextAttemptAt;
     }
 
     public ProxyBidderReactionOutcome getOutcome() {

@@ -16,6 +16,10 @@ public interface ProxyBidderRepository extends JpaRepository<ProxyBidder, String
             String bidderId
     );
 
+    List<ProxyBidder> findAllByAuctionId(
+            String auctionId
+    );
+
     List<ProxyBidder> findAllByAuctionIdAndStatus(
             String auctionId,
             ProxyBidderStatus status

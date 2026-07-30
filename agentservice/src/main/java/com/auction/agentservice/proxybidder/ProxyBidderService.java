@@ -7,6 +7,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 public class ProxyBidderService {
 
@@ -104,8 +106,20 @@ public class ProxyBidderService {
         proxyBidder.setStatus(ProxyBidderStatus.ACTIVE);
 
         return toResponse(repository.saveAndFlush(proxyBidder));
+    }
 
+    @Transactional
+    public void completeForAuction(String auctionId) {
+        List<ProxyBidder> proxyBidders =
+                repository.findAllByAuctionId(auctionId);
 
+        for (ProxyBidder proxyBidder : proxyBidders) {
+            if (proxyBidder.getStatus() != ProxyBidderStatus.COMPLETED) {
+                proxyBidder.setStatus(ProxyBidderStatus.COMPLETED);
+            }
+        }
+
+        repository.saveAll(proxyBidders);
     }
 
     private ProxyBidderResponse toResponse(ProxyBidder proxyBidder) {

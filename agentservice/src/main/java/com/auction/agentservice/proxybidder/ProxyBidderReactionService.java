@@ -4,6 +4,7 @@ import com.auction.agentservice.auction.*;
 import com.auction.agentservice.event.BidPlacedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -11,6 +12,7 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 
@@ -28,18 +30,40 @@ public class ProxyBidderReactionService {
     private final AuctionBidCommandClient commandClient;
     private final ProxyBidderReactionRepository reactionRepository;
 
-    private static final int MAX_ATTEMPTS = 3;
+    private final int maxAttempts;
+    private final Duration retryBaseDelay;
 
     public ProxyBidderReactionService(
             ProxyBidderRepository repository,
             AuctionBidStateClient stateClient,
             AuctionBidCommandClient commandClient,
-            ProxyBidderReactionRepository reactionRepository
+            ProxyBidderReactionRepository reactionRepository,
+            @Value("${proxy-bidder.retry.max-attempts:3}")
+            int maxAttempts,
+            @Value("${proxy-bidder.retry.delay-ms:2000}")
+            long retryBaseDelayMs
     ) {
         this.repository = repository;
         this.stateClient = stateClient;
         this.commandClient = commandClient;
         this.reactionRepository = reactionRepository;
+        this.maxAttempts = maxAttempts;
+        this.retryBaseDelay = Duration.ofMillis(retryBaseDelayMs);
+    }
+
+    private void recordCommandOutcome(ProxyBidderReaction reaction, Runnable sendCommand) {
+        try {
+            sendCommand.run();
+            reaction.markSucceeded();
+        } catch (HttpClientErrorException.Conflict exception) {
+            reaction.markBalked();
+        } catch (HttpClientErrorException exception) {
+            reaction.markFailed();
+        } catch (HttpServerErrorException | ResourceAccessException exception) {
+            if (reaction.getAttemptCount() >= maxAttempts) {
+                reaction.markFailed();
+            }
+        }
     }
 
     public void reactTo(BidPlacedEvent event) {
@@ -69,7 +93,7 @@ public class ProxyBidderReactionService {
             );
 
             try {
-                reactionRepository.saveAndFlush(reaction);
+                reaction = reactionRepository.saveAndFlush(reaction);
             } catch (DataIntegrityViolationException exception) {
                 continue;
             }
@@ -79,7 +103,8 @@ public class ProxyBidderReactionService {
 
             if (response.status() != AuctionStatus.OPEN) {
                 reaction.markSkipped();
-                reactionRepository.saveAndFlush(reaction);
+                reaction = reactionRepository.saveAndFlush(reaction);
+                logReaction(reaction);
                 continue;
             }
 
@@ -90,7 +115,8 @@ public class ProxyBidderReactionService {
 
             if (ownerAlreadyLeads) {
                 reaction.markSkipped();
-                reactionRepository.saveAndFlush(reaction);
+                reaction = reactionRepository.saveAndFlush(reaction);
+                logReaction(reaction);
                 continue;
             }
 
@@ -103,12 +129,14 @@ public class ProxyBidderReactionService {
             if (proposedAmount.compareTo(
                     proxyBidder.getBudget()) > 0) {
                 reaction.markSkipped();
-                reactionRepository.saveAndFlush(reaction);
+                reaction = reactionRepository.saveAndFlush(reaction);
+                logReaction(reaction);
                 continue;
             }
 
             reaction.recordAttempt();
-            reactionRepository.saveAndFlush(reaction);
+            reaction.backOff(retryBaseDelay);
+            reaction = reactionRepository.saveAndFlush(reaction);
 
             AgentBidCommand agentBidCommand = new AgentBidCommand(
                     proxyBidder.getBidderId(),
@@ -116,18 +144,13 @@ public class ProxyBidderReactionService {
                     reactionId
             );
 
-            try {
-                commandClient.placeBid(
-                        event.auctionId(),
-                        agentBidCommand
-                );
+            recordCommandOutcome(reaction, () -> commandClient.placeBid(
+                    event.auctionId(),
+                    agentBidCommand
+            ));
 
-                reaction.markSucceeded();
-            } catch (HttpClientErrorException.Conflict exception) {
-                reaction.markBalked();
-            }
-
-            reactionRepository.saveAndFlush(reaction);
+            reaction = reactionRepository.saveAndFlush(reaction);
+            logReaction(reaction);
         }
     }
 
@@ -143,9 +166,10 @@ public class ProxyBidderReactionService {
             return;
         }
 
-        if (reaction.getAttemptCount() >= MAX_ATTEMPTS) {
+        if (reaction.getAttemptCount() >= maxAttempts) {
             reaction.markFailed();
-            reactionRepository.saveAndFlush(reaction);
+            reaction = reactionRepository.saveAndFlush(reaction);
+            logReaction(reaction);
             return;
         }
 
@@ -155,17 +179,21 @@ public class ProxyBidderReactionService {
 
         if (proxyBidder == null) {
             reaction.markFailed();
-            reactionRepository.saveAndFlush(reaction);
+            reaction = reactionRepository.saveAndFlush(reaction);
+            logReaction(reaction);
             return;
         }
 
         if (proxyBidder.getStatus() != ProxyBidderStatus.ACTIVE) {
             reaction.markSkipped();
-            reactionRepository.saveAndFlush(reaction);
+            reaction = reactionRepository.saveAndFlush(reaction);
+            logReaction(reaction);
             return;
         }
 
         reaction.recordAttempt();
+        reaction.backOff(retryBaseDelay);
+        reactionRepository.saveAndFlush(reaction);
 
         try {
             BigDecimal proposedAmount = reaction.getProposedAmount();
@@ -175,7 +203,8 @@ public class ProxyBidderReactionService {
 
                 if (auctionBidStateResponse.status() != AuctionStatus.OPEN || Objects.equals(auctionBidStateResponse.highestBidderId(), proxyBidder.getBidderId())) {
                     reaction.markSkipped();
-                    reactionRepository.saveAndFlush(reaction);
+                    reaction = reactionRepository.saveAndFlush(reaction);
+                    logReaction(reaction);
                     return;
                 }
 
@@ -186,7 +215,8 @@ public class ProxyBidderReactionService {
 
             if (proposedAmount.compareTo(proxyBidder.getBudget()) > 0) {
                 reaction.markSkipped();
-                reactionRepository.saveAndFlush(reaction);
+                reaction = reactionRepository.saveAndFlush(reaction);
+                logReaction(reaction);
                 return;
             }
 
@@ -196,19 +226,16 @@ public class ProxyBidderReactionService {
                     reaction.getReactionId()
             );
 
-            commandClient.placeBid(
-                    reaction.getAuctionId(),
+            String targetAuctionId = reaction.getAuctionId();
+            recordCommandOutcome(reaction, () -> commandClient.placeBid(
+                    targetAuctionId,
                     command
-            );
-
-            reaction.markSucceeded();
-        } catch (HttpClientErrorException.Conflict exception) {
-            reaction.markBalked();
+            ));
         } catch (HttpClientErrorException exception) {
             reaction.markFailed();
         } catch (HttpServerErrorException |
                 ResourceAccessException exception) {
-            if (reaction.getAttemptCount() >= MAX_ATTEMPTS) {
+            if (reaction.getAttemptCount() >= maxAttempts) {
                 reaction.markFailed();
             }
         }

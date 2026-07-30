@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: agentservice
+
+  jpa:
+    hibernate:
+      # Fresh container per run, so build the schema from the entities.
+      ddl-auto: create-drop
+    open-in-view: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Not fetched at startup, unlike issuer-uri, so no Keycloak is needed.
+          jwk-set-uri: http://localhost:0/.well-known/jwks.json
+
+      # A registration must exist for OAuthClientConfig's ClientRegistrationRepository,
+      # but the provider uses an explicit token-uri so nothing is discovered at startup.
+      # The Auction clients are replaced with mocks in tests, so no token is ever fetched.
+      client:
+        registration:
+          auctionservice:
+            provider: keycloak
+            client-id: agentservice
+            client-secret: test-secret
+            authorization-grant-type: client_credentials
+        provider:
+          keycloak:
+            token-uri: http://localhost:0/token
+
+# No service registry in tests.
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+clients:
+  auctionservice:
+    base-url: http://localhost:0
+
+proxy-bidder:
+  retry:
+    delay-ms: 2000
+    max-attempts: 3
