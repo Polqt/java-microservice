@@ -2,9 +2,10 @@ package com.auction.agentservice.proxybidder;
 
 import com.auction.agentservice.auction.AuctionBidStateClient;
 import com.auction.agentservice.auction.AuctionBidStateResponse;
-import jakarta.transaction.Transactional;
+import com.auction.agentservice.auction.AuctionStatus;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProxyBidderService {
@@ -47,7 +48,7 @@ public class ProxyBidderService {
 
     @Transactional
     public ProxyBidderResponse updateBudget(String id, String bidderId, UpdateProxyBidderBudgetRequest request) {
-        ProxyBidder proxyBidder = repository.findById(id).orElseThrow(() -> new ProxyBidderNotFoundException(id));
+        ProxyBidder proxyBidder = repository.findByIdAndBidderId(id, bidderId).orElseThrow(() -> new ProxyBidderNotFoundException(id));
 
         if (proxyBidder.getStatus() == ProxyBidderStatus.COMPLETED) {
             throw new ProxyBidderCompletedException(id);
@@ -69,6 +70,42 @@ public class ProxyBidderService {
                 .orElseThrow(()-> new ProxyBidderNotFoundException(id));
 
         return toResponse(proxyBidder);
+    }
+
+    @Transactional
+    public ProxyBidderResponse pause(String id, String bidderId) {
+        ProxyBidder proxyBidder = repository.findByIdAndBidderId(id, bidderId)
+                .orElseThrow(() -> new ProxyBidderNotFoundException(id));
+
+        if (proxyBidder.getStatus() == ProxyBidderStatus.COMPLETED) {
+            throw new ProxyBidderCompletedException(id);
+        }
+
+        proxyBidder.setStatus(ProxyBidderStatus.PAUSED);
+
+        return toResponse(repository.saveAndFlush(proxyBidder));
+    }
+
+    @Transactional
+    public ProxyBidderResponse reactivate(String id, String bidderId) {
+        ProxyBidder proxyBidder = repository.findByIdAndBidderId(id, bidderId)
+                .orElseThrow(() -> new ProxyBidderNotFoundException(id));
+
+        if (proxyBidder.getStatus() == ProxyBidderStatus.COMPLETED) {
+            throw new ProxyBidderCompletedException(id);
+        }
+
+        AuctionBidStateResponse auctionBidStateResponse = auctionBidStateClient.getBidState(proxyBidder.getAuctionId());
+
+        if (auctionBidStateResponse.status() != AuctionStatus.OPEN) {
+            throw new AuctionNotOpenException(proxyBidder.getAuctionId());
+        }
+
+        proxyBidder.setStatus(ProxyBidderStatus.ACTIVE);
+
+        return toResponse(repository.saveAndFlush(proxyBidder));
+
+
     }
 
     private ProxyBidderResponse toResponse(ProxyBidder proxyBidder) {

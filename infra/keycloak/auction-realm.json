@@ -87,6 +87,15 @@
         "attributes": {}
       },
       {
+        "id": "5c1f0b7e-9d24-4a1f-8f3b-6a1c2d4e5f60",
+        "name": "SERVICE_AGENT",
+        "description": "Service account role for agentservice — grants access to /internal endpoints.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "7c8919d3-656d-4bd3-88f5-31a0148b8237",
+        "attributes": {}
+      },
+      {
         "id": "288d3a0e-3786-442a-a5ad-0261a7f0a894",
         "name": "SELLER",
         "description": "Creates and owns Auctions.",
@@ -433,6 +442,70 @@
     }
   },
   "groups": [],
+  "users": [
+    {
+      "username": "service-account-agentservice",
+      "enabled": true,
+      "serviceAccountClientId": "agentservice",
+      "realmRoles": [
+        "SERVICE_AGENT"
+      ]
+    },
+    {
+      "username": "seller1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "seller1@example.com",
+      "firstName": "Sole",
+      "lastName": "Seller",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "SELLER"
+      ]
+    },
+    {
+      "username": "bidder1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bidder1@example.com",
+      "firstName": "Bea",
+      "lastName": "Bidder",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "BIDDER"
+      ]
+    },
+    {
+      "username": "bidder2",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bidder2@example.com",
+      "firstName": "Ben",
+      "lastName": "Bidder",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "BIDDER"
+      ]
+    }
+  ],
   "defaultRole": {
     "id": "fa9c65d7-33aa-4ec5-b154-8c558a41374f",
     "name": "default-roles-auction",
@@ -676,7 +749,8 @@
       "consentRequired": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
+      "//": "directAccessGrants is enabled for LOCAL DEV ONLY, so tokens can be fetched with curl. Disable for any deployed realm.",
+      "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "publicClient": true,
       "frontchannelLogout": true,
@@ -717,6 +791,44 @@
         "offline_access",
         "microprofile-jwt"
       ]
+    },
+    {
+      "id": "9f2c7d61-4b83-4e57-9a20-1c3d5e7f8a91",
+      "clientId": "agentservice",
+      "name": "Agent Service",
+      "description": "Autonomous proxy bidders. Machine-to-machine client for /internal endpoints.",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "agentservice-dev-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "notBefore": 0,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false",
+        "client_credentials.use_refresh_token": "false",
+        "use.refresh.tokens": "false"
+      },
+      "authenticationFlowBindingOverrides": {},
+      "fullScopeAllowed": true,
+      "nodeReRegistrationTimeout": -1,
+      "defaultClientScopes": [
+        "acr",
+        "roles",
+        "basic"
+      ],
+      "optionalClientScopes": []
     },
     {
       "id": "1add3e1f-3e95-473e-b7e9-4eff8a033560",

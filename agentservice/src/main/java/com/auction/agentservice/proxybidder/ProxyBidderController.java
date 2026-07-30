@@ -29,10 +29,20 @@ public class ProxyBidderController {
         return service.get(id, jwt.getSubject());
     }
 
-    @PatchMapping
-    public ResponseEntity<ProxyBidderResponse> update(@AuthenticationPrincipal Jwt jwt,  @Valid @RequestBody UpdateProxyBidderBudgetRequest request) {
-        ProxyBidderResponse response = service.update(jwt.getSubject(), request);
+    @PatchMapping("/{id}/budget")
+    public ResponseEntity<ProxyBidderResponse> update(@PathVariable String id, @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody UpdateProxyBidderBudgetRequest request) {
+        ProxyBidderResponse response = service.updateBudget(id, jwt.getSubject(), request);
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @PostMapping("/{id}/pause")
+    public ProxyBidderResponse pause(@PathVariable String id, @AuthenticationPrincipal Jwt jwt) {
+        return service.pause(id, jwt.getSubject());
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ProxyBidderResponse reactivate(@PathVariable String id, @AuthenticationPrincipal Jwt jwt) {
+        return service.reactivate(id, jwt.getSubject());
     }
 }

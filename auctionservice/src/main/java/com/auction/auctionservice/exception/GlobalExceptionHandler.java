@@ -29,11 +29,6 @@ public class GlobalExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(409), ex.getMessage());
     }
 
-    @ExceptionHandler(OptimisticLockingFailureException.class)
-    public ProblemDetail handleOptimisticLockingFailureException(OptimisticLockingFailureException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Concurrent Auction update");
-    }
-
     @ExceptionHandler(BidBelowStartingPriceException.class)
     public ProblemDetail handleBidBelowStartingPrice(BidBelowStartingPriceException exception) {
         return ProblemDetail.forStatusAndDetail(
@@ -45,5 +40,20 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuctionCloseTooEarlyException.class)
     public ProblemDetail handleAuctionCloseTooEarlyException(AuctionCloseTooEarlyException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(403), ex.getMessage());
+    }
+
+    @ExceptionHandler(NotAuctionOwnerException.class)
+    public ProblemDetail handleNotAuctionOwnerException(NotAuctionOwnerException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    // A lost optimistic-lock race is a normal outcome under contention, not a server fault:
+    // the bid (or close) was beaten to the row. The client should re-read and decide again.
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "Another request updated this auction first, re-read and retry"
+        );
     }
 }

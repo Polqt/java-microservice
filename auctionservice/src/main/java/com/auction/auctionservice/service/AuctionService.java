@@ -13,10 +13,9 @@ import com.auction.auctionservice.repository.BidRepository;
 import com.auction.auctionservice.repository.DealRepository;
 import com.auction.auctionservice.event.AuctionClosedEvent;
 import com.auction.auctionservice.event.DealCreatedEvent;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -29,7 +28,6 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@EnableMethodSecurity
 public class AuctionService {
 
     private final AuctionRepository auctionRepository;
@@ -37,8 +35,26 @@ public class AuctionService {
     private final ApplicationEventPublisher eventPublisher;
     private final DealRepository dealRepository;
 
+    /** Human bid path, no idempotency key; the caller is a person clicking once. */
     @Transactional
     public BidResponse placeBid(String auctionId, String bidderId, BigDecimal amount) {
+        return placeBid(auctionId, bidderId, amount, null);
+    }
+
+    /**
+     * Bid path with an optional idempotency key (reactionId).
+     * Agents retry, on redelivery, restart, or a network blip, so the same logical
+     * reaction must never place two Bids. A replayed reactionId returns the original Bid.
+     */
+    @Transactional
+    public BidResponse placeBid(String auctionId, String bidderId, BigDecimal amount, String reactionId) {
+        if (reactionId != null) {
+            Optional<Bid> alreadyPlaced = bidRepository.findByReactionId(reactionId);
+            if (alreadyPlaced.isPresent()) {
+                return toBidResponse(alreadyPlaced.get());
+            }
+        }
+
         Auction auction = auctionRepository.findById(auctionId)
                 .orElseThrow(() -> new AuctionNotFoundException(auctionId));
 
@@ -79,6 +95,7 @@ public class AuctionService {
         bid.setAuctionId(auctionId);
         bid.setBidderId(bidderId);
         bid.setAmount(amount);
+        bid.setReactionId(reactionId);
 
         Bid savedBid = bidRepository.saveAndFlush(bid);
 
@@ -103,9 +120,15 @@ public class AuctionService {
     }
 
     @Transactional
-    public CloseAuctionResponse closeAuction(String auctionId) {
+    public CloseAuctionResponse closeAuction(String auctionId, String callerId) {
         Auction auction = auctionRepository.findById(auctionId)
                 .orElseThrow(() -> new AuctionNotFoundException(auctionId));
+
+        // Only the owning Seller may close. Checked here, not in the controller,
+        // this is the only place holding the persisted auction.
+        if (!callerId.equals(auction.getSellerId())) {
+            throw new NotAuctionOwnerException(auctionId);
+        }
 
         if (auction.getStatus() == AuctionStatus.CLOSED) {
             Deal existingDeal = dealRepository.findByAuctionId(auctionId)
@@ -165,7 +188,7 @@ public class AuctionService {
         return toCloseAuctionResponse(auction, deal);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public AuctionBidStateResponse getBidState(String auctionId) {
         Auction auction = auctionRepository.findById(auctionId)
                 .orElseThrow(() -> new AuctionNotFoundException(auctionId));
@@ -180,6 +203,21 @@ public class AuctionService {
                 auction.getEndAt(),
                 auction.getHighestBidderId()
         );
+    }
+
+    /** Replay of an already-placed Bid: report it as-is rather than bidding again. */
+    private BidResponse toBidResponse(Bid bid) {
+        Auction auction = auctionRepository.findById(bid.getAuctionId())
+                .orElseThrow(() -> new AuctionNotFoundException(bid.getAuctionId()));
+
+        BidResponse response = new BidResponse();
+        response.setBidId(bid.getId());
+        response.setAuctionId(bid.getAuctionId());
+        response.setAmount(bid.getAmount());
+        response.setPlacedAt(bid.getPlacedAt());
+        response.setCurrentPrice(auction.getCurrentPrice());
+        response.setLeading(bid.getBidderId().equals(auction.getHighestBidderId()));
+        return response;
     }
 
     private CloseAuctionResponse toCloseAuctionResponse(Auction auction, Deal deal) {

@@ -6,7 +6,8 @@ spring:
     name: auctionservice
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
+    # Database-per-service: the name is fixed by which service this is, not by environment.
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/auctionservice
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver

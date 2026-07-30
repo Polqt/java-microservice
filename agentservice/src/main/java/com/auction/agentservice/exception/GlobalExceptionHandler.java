@@ -1,12 +1,12 @@
 package com.auction.agentservice.exception;
 
-import com.auction.agentservice.proxybidder.BudgetBelowStartingPriceException;
-import com.auction.agentservice.proxybidder.ProxyBidderAlreadyExistsException;
-import com.auction.agentservice.proxybidder.ProxyBidderNotFoundException;
+import com.auction.agentservice.proxybidder.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.OptimisticLockingFailureException;
+
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -38,6 +38,36 @@ public class GlobalExceptionHandler {
         return ProblemDetail.forStatusAndDetail(
                 HttpStatus.UNPROCESSABLE_CONTENT,
                 exception.getMessage()
+        );
+    }
+
+    @ExceptionHandler(ProxyBidderCompletedException.class)
+    public ProblemDetail handleCompleted(
+            ProxyBidderCompletedException exception
+    ) {
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+    }
+
+    @ExceptionHandler(AuctionNotOpenException.class)
+    public ProblemDetail handleAuctionNotOpen(
+            AuctionNotOpenException exception
+    ) {
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail handleOptimisticLockingFailure(
+            OptimisticLockingFailureException exception
+    ) {
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "Proxy Bidder was updated concurrently."
         );
     }
 }

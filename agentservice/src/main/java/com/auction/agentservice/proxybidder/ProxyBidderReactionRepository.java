@@ -1,0 +1,20 @@
+package com.auction.agentservice.proxybidder;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface ProxyBidderReactionRepository extends JpaRepository<ProxyBidderReaction, String> {
+
+    Optional<ProxyBidderReaction>
+    findByProxyBidderIdAndSourceEventId(
+            String proxyBidderId,
+            UUID sourceEventId
+    );
+
+    List<ProxyBidderReaction> findAllByOutcome(
+            ProxyBidderReactionOutcome outcome
+    );
+}

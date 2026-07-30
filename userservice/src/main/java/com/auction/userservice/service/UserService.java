@@ -10,6 +10,7 @@ import com.auction.userservice.model.User;
 import com.auction.userservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 
 @Service
@@ -18,6 +19,7 @@ public class UserService {
 
     private final UserRepository repository;
 
+    @Transactional
     public UserResponse register(String userId, String email, RegisterRequest request) {
         if (repository.existsById(userId)) {
             throw new UserAlreadyExistsException(userId);
@@ -37,13 +39,17 @@ public class UserService {
         return toResponse(savedUser);
     }
 
+    @Transactional(readOnly = true)
     public UserResponse getUserProfile(String userId) {
         User user = repository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
         return toResponse(user);
     }
+
+    // Read-then-write must be one transaction, or a concurrent update can be lost.
+    @Transactional
     public UserResponse editProfile(String userId, UpdateProfileRequest request) {
-        User user =repository.findById(userId)
+        User user = repository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         if (request.getFirstName() != null) {
@@ -59,6 +65,7 @@ public class UserService {
         return toResponse(savedUser);
     }
 
+    @Transactional
     public void deleteProfile(String userId) {
         User user = repository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));

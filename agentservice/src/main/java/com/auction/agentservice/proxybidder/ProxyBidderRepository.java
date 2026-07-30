@@ -2,6 +2,7 @@ package com.auction.agentservice.proxybidder;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ProxyBidderRepository extends JpaRepository<ProxyBidder, String> {
@@ -13,5 +14,10 @@ public interface ProxyBidderRepository extends JpaRepository<ProxyBidder, String
     Optional<ProxyBidder> findByIdAndBidderId(
             String id,
             String bidderId
+    );
+
+    List<ProxyBidder> findAllByAuctionIdAndStatus(
+            String auctionId,
+            ProxyBidderStatus status
     );
 }

@@ -32,9 +32,12 @@ public class AuctionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-     @PostMapping("/{auctionId}/close")
-     public ResponseEntity<CloseAuctionResponse> closeAuction(@PathVariable String auctionId) {
-        return ResponseEntity.ok(auctionService.closeAuction(auctionId));
-     }
+    @PostMapping("/{auctionId}/close")
+    public ResponseEntity<CloseAuctionResponse> closeAuction(
+            @PathVariable String auctionId,
+            @AuthenticationPrincipal Jwt jwt) {
+        // Identity comes from the token; the service checks it against the auction's seller.
+        return ResponseEntity.ok(auctionService.closeAuction(auctionId, jwt.getSubject()));
+    }
 
 }
