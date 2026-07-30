@@ -32,6 +32,14 @@ _Avoid_: Bot, auto-bidder, robot
 The hard maximum a Proxy Bidder may ever bid. Never exceeded, regardless of advice.
 _Avoid_: Limit, cap (ambiguous), max price
 
+**Reaction**:
+One Proxy Bidder's response to a single competing Bid. Exactly one Reaction exists per Proxy Bidder and source event, so a redelivered event cannot produce a second Bid.
+_Avoid_: Attempt, job, task, trigger
+
+**Balk**:
+To abandon an action already begun because the state it depended on has moved on — a Bid beaten to the lead, or a Reaction whose Auction has advanced. A balked action is refused outright, never queued or retried.
+_Avoid_: Fail, reject, abort
+
 **Close**:
 The moment an Auction ends and its winner is determined exactly once.
 _Avoid_: End, finish, expire

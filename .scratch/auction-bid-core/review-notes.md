@@ -1,118 +1,69 @@
 # Review notes — auctionservice
 
-Open items from code review. Ordered: blockers first. Tick as you go.
+## Resolved
+
+Fixed in the hardening pass. Both services compile.
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | **Close had no authorization** — any authenticated user could close any auction and mint its Deal | `closeAuction(auctionId, callerId)`; seller check in the service against the loaded auction; new `NotAuctionOwnerException` → 403. Controller passes `jwt.getSubject()` |
+| 2 | **Both services shared one database** (`${POSTGRES_DB}`), defeating DB-per-service | Database name hardcoded per service (`/auctionservice`, `/userservice`); host stays configurable via `POSTGRES_HOST` |
+| 3 | **`reactionId` accepted, validated, then discarded** — agent retries placed duplicate Bids | Persisted on `Bid` with a unique constraint; `placeBid` returns the original Bid on replay. 3-arg overload keeps the human path unchanged |
+| 4 | **Internal endpoints unreachable** — `@PreAuthorize` required client `agentservice`, which did not exist in the realm | Added `agentservice` confidential client (service accounts enabled) + `SERVICE_AGENT` realm role + its service-account user |
+| 5 | **`aud` claim check could NPE → 500 instead of 403**, and `.contains()` silently did substring matching on a String claim | Replaced SpEL claim-string checks with `@PreAuthorize("hasRole('SERVICE_AGENT')")` at class level, using the existing `JwtAuthenticationConverter` |
+| 6 | **`@EnableMethodSecurity` on a `@Service`** — configuration annotation in the wrong place | Removed (already correct on `SecurityConfig`) |
+| 7 | **Full table scan selecting the winning Bid** — no index behind `findTopByAuctionIdOrderByAmountDescPlacedAtAsc` | Composite index on `bids(auctionId, amount, placedAt)`, plus one on `bidderId` |
+| 8 | **`jakarta.transaction.Transactional`** — no `readOnly`, no `rollbackFor`, no propagation | Switched to Spring's; `getBidState` is now `readOnly = true` |
+| 9 | **Internal bid returned 200, public returned 201** for the same operation | Both 201 |
+| 10 | **`OptimisticLockingFailureException` unmapped** — a lost race would surface as 500 | Mapped to 409 with a re-read message |
+| 11 | **userservice had no transaction boundaries** — `editProfile`'s read-then-write was not atomic | `@Transactional` on writes, `readOnly` on reads |
+| 12 | **No way to obtain a token locally** — no realm users, direct access grants disabled | Seeded `seller1`, `bidder1`, `bidder2` (password `password`); enabled direct access grants on `auction-web`, flagged dev-only in the realm file |
+
+Two bidders are seeded deliberately — the concurrency test needs distinct racing identities.
 
 ---
 
-## 1. Close endpoint has no authorization (security)
+## Still open
 
-**Where:** `controller/AuctionController.java` — `closeAuction`, and `service/AuctionService.java` — `closeAuction`
+### The concurrency test does not exist
 
-Any authenticated user can close any auction and mint its Deal. The earlier check was removed and nothing replaced it.
+Only Initializr stubs in `src/test`. `TestcontainersConfiguration` is scaffolded, so the seam is ready.
 
-The check belongs in the **service**, which holds the DB-loaded auction. The controller only passes identity down.
+From [spec.md](spec.md):
 
-```java
-// controller
-@PostMapping("/{auctionId}/close")
-public ResponseEntity<CloseAuctionResponse> closeAuction(
-        @PathVariable String auctionId,
-        @AuthenticationPrincipal Jwt jwt) {
-    return ResponseEntity.ok(auctionService.closeAuction(auctionId, jwt.getSubject()));
-}
+> Two concurrent `POST /api/auctions/{id}/bids` against one auction → exactly one `201`, exactly one `409`, and the persisted lead equals the accepted bid.
 
-// service, immediately after findById
-if (!callerId.equals(auction.getSellerId())) {
-    throw new NotAuctionOwnerException(auctionId);   // new exception -> 403 in GlobalExceptionHandler
-}
-```
+Shape: `@SpringBootTest` + Testcontainers Postgres, two threads released together by a `CountDownLatch`, collect both statuses, assert the pair. Drive the HTTP API, not the service.
 
-Rule worth keeping: **never take an entity as a controller parameter.** Spring binds it from request params, producing a blank object that never touches the database. Controllers take ids and DTOs.
+Then: below increment → 409; below starting price → 422; closed → 403; seller bidding → 403; missing auction → 404; unauthenticated → 401.
 
----
+### Spec drift
 
-## 2. No datasource configured — the service will not start
+[spec.md](spec.md) lists close, winner selection, and the agent API as **out of scope**, but all three are built. Either write `auction-close` and `agent-integration` specs, or widen this one. A reviewer comparing spec to code sees drift today.
 
-**Where:** `src/main/resources/application.properties`
+### Events can still be lost after commit
 
-Currently only `spring.application.name` and the JWT issuer. JPA is on the classpath with no database configured, so startup fails.
+`AFTER_COMMIT` publishing means a Rabbit outage after the transaction commits loses the event silently. The fix is a transactional outbox (persist the event in the same transaction, relay it separately). Correct call to defer — but know the gap exists rather than assuming delivery is guaranteed.
 
-Rename to `application.yml` (consistent with userservice) and add:
+### Auction has no creation endpoint
 
-```yaml
-spring:
-  application:
-    name: auctionservice
-
-  datasource:
-    url: jdbc:postgresql://localhost:5432/auctionservice
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
-
-  jpa:
-    hibernate:
-      ddl-auto: update      # fine while learning; replace with Flyway before it matters
-    show-sql: true
-
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${JWT_ISSUER_URI}
-```
-
-Database `auctionservice` is already created by `infra/postgres/init/01-create-databases.sql`.
+Nothing creates an Auction, so bidding cannot be exercised through the API at all — tests and manual runs both need seeded rows. Smallest unblock for end-to-end testing.
 
 ---
 
-## 3. The concurrency test does not exist yet
+## Deliberate simplifications — leave as-is
 
-**Where:** `src/test/java/...` — only the Initializr stub is there. `TestcontainersConfiguration` is already scaffolded, so the seam is ready.
-
-This is the deliverable the whole spec exists for. Everything built so far — optimistic locking, balking, exactly-once close — rests on `@Version` behaving as expected, and none of it is currently proven.
-
-The headline test, from [spec.md](spec.md):
-
-> Fire two concurrent `POST /api/auctions/{id}/bids` at one auction → assert **exactly one `201`** and **exactly one `409`**, and that the persisted current lead equals the accepted bid.
-
-Shape: `@SpringBootTest` with real Postgres via Testcontainers, two threads on a `CountDownLatch` so both bids land together, collect both status codes, assert the pair. Drive it through the HTTP API — the highest seam — not the service directly.
-
-Supporting cases once that is green: below increment → 409; below starting price → 422; closed auction → 403; seller bidding → 403; missing auction → 404; unauthenticated → 401.
-
----
-
-## 4. Minor
-
-- **`jakarta.transaction.Transactional` → `org.springframework.transaction.annotation.Transactional`** in `AuctionService`. Spring's variant supports `readOnly`, `rollbackFor`, propagation and isolation; the Jakarta one does not.
-- **Unused import** `java.time.Instant` in `model/Auction.java`.
-- **Stray blank lines** in `AuctionService.closeAuction` around the winning-bid lookup.
-- **Table naming** — `auctions`, `bids`, `deals` are plural; keep it that way everywhere.
-
----
-
-## 5. Deliberate simplifications — leave as-is, mark the intent
-
-Not defects. Worth a `// ponytail:` comment so a reader sees intent rather than oversight.
-
-- **No retry loop in `placeBid`.** The race loser gets `OptimisticLockingFailureException` → `409`. A bid that might have won on retry is rejected instead. The API contract still holds. Add bounded retry only if the rejection rate hurts real users.
-- **Close is a manual `POST`.** The scheduled sweep (`auction.closing` + automatic close at `endAt`) is a later slice.
-- **Events carry ids and minimal data**, not full entities. Consumers re-fetch. Costs an extra call, avoids stale-data coupling.
-
----
+- **No retry loop in `placeBid`.** The race loser gets 409 and re-bids. Contract holds; add bounded retry only if rejection rates hurt real users.
+- **Close is a manual `POST`.** Scheduled sweep (`auction.closing`, auto-close at `endAt`) is a later slice.
+- **Events carry ids, not entities.** Extra fetch for consumers, no stale-data coupling.
+- **`ddl-auto: update`.** Fine while learning; replace with Flyway before schema changes matter.
 
 ## Already correct — do not "fix" these
 
-Recorded so they do not get refactored away later:
-
-- `saveAndFlush` in `placeBid` is deliberate: it forces the version check inside the method so the conflict surfaces there, not at commit time.
-- `@TransactionalEventListener(AFTER_COMMIT)` means no event is published if the transaction rolls back.
-- The `CLOSED` branch of `closeAuction` returns the existing Deal and publishes **nothing** — replay-safe.
-- `findTopByAuctionIdOrderByAmountDescPlacedAtAsc` — highest amount, earliest bid wins ties. Correct winner rule.
-- Money comparisons use `compareTo`, never `equals` (`BigDecimal` treats `100` and `100.0` as unequal).
-- The unique constraint on `deals.auction_id` is the second net behind the version check for exactly-once Deal creation.
+- `saveAndFlush` in `placeBid` is deliberate: forces the version check inside the method, so the conflict surfaces there rather than at commit.
+- `@TransactionalEventListener(AFTER_COMMIT)` — nothing is published if the transaction rolls back.
+- The `CLOSED` branch of `closeAuction` returns the existing Deal and publishes nothing — replay-safe.
+- `findTopByAuctionIdOrderByAmountDescPlacedAtAsc` — highest amount, earliest bid breaks ties.
+- Money comparisons use `compareTo`, never `equals`.
+- Unique constraint on `deals.auction_id` is the second net behind the version check.
+- `@Version` is `Long`, not a timestamp — timestamps tie within a clock tick.
