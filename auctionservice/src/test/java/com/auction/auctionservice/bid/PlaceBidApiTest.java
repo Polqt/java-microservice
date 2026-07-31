@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.UUID;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
@@ -96,6 +98,68 @@ class PlaceBidApiTest {
         assertThat(persisted.getHighestBidderId()).isEqualTo(BIDDER_ID);
     }
 
+    @Test
+    void bidBelowTheMinimumIncrementIsBalked() throws Exception {
+        placeBid(BIDDER_ID, "150.00").andExpect(status().isCreated());
+
+        // Lead is 150, increment 10, so 155 does not clear the bar.
+        placeBid("bidder-2", "155.00")
+                .andExpect(status().isConflict());
+
+        assertThat(auctionRepository.findById(auctionId).orElseThrow().getHighestBidderId())
+                .describedAs("a balked bid must not take the lead")
+                .isEqualTo(BIDDER_ID);
+    }
+
+    @Test
+    void bidBelowTheStartingPriceIsRejectedAsUnprocessable() throws Exception {
+        // No bids yet, so the floor is the starting price of 100 — not the increment.
+        placeBid(BIDDER_ID, "50.00")
+                .andExpect(status().isUnprocessableContent());
+
+        assertThat(bidRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void bidOnAClosedAuctionIsForbidden() throws Exception {
+        Auction auction = auctionRepository.findById(auctionId).orElseThrow();
+        auction.setStatus(AuctionStatus.CLOSED);
+        auctionRepository.saveAndFlush(auction);
+
+        placeBid(BIDDER_ID, "150.00")
+                .andExpect(status().isForbidden());
+
+        assertThat(bidRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void sellerCannotBidOnTheirOwnAuction() throws Exception {
+        // Shill bidding: the Seller inflating their own Auction.
+        placeBid(SELLER_ID, "150.00")
+                .andExpect(status().isForbidden());
+
+        assertThat(bidRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void bidOnAnUnknownAuctionIsNotFound() throws Exception {
+        mockMvc.perform(post("/api/auctions/{auctionId}/bids", UUID.randomUUID().toString())
+                        .with(bidder(BIDDER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 150.00}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unauthenticatedBidIsRejected() throws Exception {
+        mockMvc.perform(post("/api/auctions/{auctionId}/bids", auctionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 150.00}"))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(bidRepository.findAll()).isEmpty();
+    }
+
     /**
      * The reason this spec exists: two Bidders bid the same amount at the same moment,
      * and exactly one may take the lead.
@@ -161,6 +225,13 @@ class PlaceBidApiTest {
                     .getResponse()
                     .getStatus();
         };
+    }
+
+    private ResultActions placeBid(String bidderId, String amount) throws Exception {
+        return mockMvc.perform(post("/api/auctions/{auctionId}/bids", auctionId)
+                .with(bidder(bidderId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\": " + amount + "}"));
     }
 
     /** A Bidder identity as the resource server would see it: subject + BIDDER realm role. */

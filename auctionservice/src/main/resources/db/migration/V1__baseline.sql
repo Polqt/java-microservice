@@ -1,0 +1,5 @@
+create table auctions (current_price numeric(38,2), min_increment numeric(38,2), starting_price numeric(38,2), closed_at timestamp(6), created_at timestamp(6) not null, end_at timestamp(6), start_at timestamp(6), version bigint not null, highest_bidder_id varchar(255), id varchar(255) not null, seller_id varchar(255), status varchar(255) check ((status in ('SCHEDULED','OPEN','CLOSED'))), title varchar(255), primary key (id));
+create table bids (amount numeric(38,2) not null, placed_at timestamp(6) not null, auction_id varchar(255) not null, bidder_id varchar(255) not null, id varchar(255) not null, reaction_id varchar(255), primary key (id), constraint uk_bids_reaction unique (reaction_id));
+create table deals (final_price numeric(38,2), created_at timestamp(6) not null, auction_id varchar(255) not null unique, id varchar(255) not null, seller_id varchar(255), winning_bid_id varchar(255), winning_bidder_id varchar(255), primary key (id));
+create index idx_bids_auction_amount on bids (auction_id, amount, placed_at);
+create index idx_bids_bidder on bids (bidder_id);

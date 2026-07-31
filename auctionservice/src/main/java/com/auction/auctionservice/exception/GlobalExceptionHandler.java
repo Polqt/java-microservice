@@ -56,4 +56,12 @@ public class GlobalExceptionHandler {
                 "Another request updated this auction first, re-read and retry"
         );
     }
+
+    @ExceptionHandler(InvalidAuctionWindowException.class)
+    public ProblemDetail handleInvalidAuctionWindowException(InvalidAuctionWindowException ex) {
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                ex.getMessage()
+        );
+    }
 }

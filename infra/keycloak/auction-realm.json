@@ -732,7 +732,6 @@
       "consentRequired": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "//": "directAccessGrants is enabled for LOCAL DEV ONLY, so tokens can be fetched with curl. Disable for any deployed realm.",
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "publicClient": true,

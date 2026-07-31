@@ -1,16 +1,17 @@
 package com.auction.auctionservice.controller;
 
-import com.auction.auctionservice.dto.BidResponse;
-import com.auction.auctionservice.dto.CloseAuctionResponse;
-import com.auction.auctionservice.dto.PlaceBidRequest;
+import com.auction.auctionservice.dto.*;
 import com.auction.auctionservice.service.AuctionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+
+import java.net.URI;
 
 @RestController
 @RequestMapping("/api/auctions")
@@ -38,6 +39,18 @@ public class AuctionController {
             @AuthenticationPrincipal Jwt jwt) {
         // Identity comes from the token; the service checks it against the auction's seller.
         return ResponseEntity.ok(auctionService.closeAuction(auctionId, jwt.getSubject()));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<AuctionResponse> createAuction(
+            @Valid @RequestBody CreateAuctionRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        AuctionResponse response = auctionService.createAuction(jwt.getSubject(), request);
+        return ResponseEntity
+                .created(URI.create("/api/auctions/" + response.id()))
+                .body(response);
     }
 
 }

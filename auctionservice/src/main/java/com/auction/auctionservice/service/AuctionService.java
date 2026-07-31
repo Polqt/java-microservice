@@ -1,8 +1,6 @@
 package com.auction.auctionservice.service;
 
-import com.auction.auctionservice.dto.AuctionBidStateResponse;
-import com.auction.auctionservice.dto.BidResponse;
-import com.auction.auctionservice.dto.CloseAuctionResponse;
+import com.auction.auctionservice.dto.*;
 import com.auction.auctionservice.exception.*;
 import com.auction.auctionservice.model.Auction;
 import com.auction.auctionservice.model.AuctionStatus;
@@ -34,6 +32,30 @@ public class AuctionService {
     private final BidRepository bidRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final DealRepository dealRepository;
+
+    @Transactional
+    public AuctionResponse createAuction(String sellerId, CreateAuctionRequest request) {
+        if (!request.endAt().isAfter(request.startAt())) {
+            throw new InvalidAuctionWindowException("endAt must be after startAt");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (request.endAt().isBefore(now)) {
+            throw new InvalidAuctionWindowException("endAt is already in the past");
+        }
+
+        Auction auction = new Auction();
+        auction.setSellerId(sellerId);
+        auction.setTitle(request.title());
+        auction.setStartingPrice(request.startingPrice());
+        auction.setCurrentPrice(request.startingPrice());
+        auction.setMinIncrement(request.minIncrement());
+        auction.setStatus(request.startAt().isAfter(now) ? AuctionStatus.SCHEDULED : AuctionStatus.OPEN);
+        auction.setStartAt(request.startAt());
+        auction.setEndAt(request.endAt());
+
+        return toAuctionResponse(auctionRepository.saveAndFlush(auction));
+    }
 
     /** Human bid path, no idempotency key; the caller is a person clicking once. */
     @Transactional
@@ -118,7 +140,7 @@ public class AuctionService {
 
         return response;
     }
-
+    
     @Transactional
     public CloseAuctionResponse closeAuction(String auctionId, String callerId) {
         Auction auction = auctionRepository.findById(auctionId)
@@ -218,6 +240,20 @@ public class AuctionService {
         response.setCurrentPrice(auction.getCurrentPrice());
         response.setLeading(bid.getBidderId().equals(auction.getHighestBidderId()));
         return response;
+    }
+
+    private AuctionResponse toAuctionResponse(Auction auction) {
+        return new AuctionResponse(
+                auction.getId(),
+                auction.getSellerId(),
+                auction.getTitle(),
+                auction.getStartingPrice(),
+                auction.getCurrentPrice(),
+                auction.getMinIncrement(),
+                auction.getStatus(),
+                auction.getStartAt(),
+                auction.getEndAt()
+        );
     }
 
     private CloseAuctionResponse toCloseAuctionResponse(Auction auction, Deal deal) {

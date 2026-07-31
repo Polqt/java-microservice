@@ -14,9 +14,16 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      # Flyway owns the schema; Hibernate only checks the entities match it.
+      # Regenerate the baseline with schema-generation scripts if entities change.
+      ddl-auto: validate
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: true
+
+  # Sibling of jpa, not nested inside it.
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
 
   security:
     oauth2:
