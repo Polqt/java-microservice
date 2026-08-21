@@ -98,6 +98,24 @@ class PlaceBidApiTest {
         assertThat(persisted.getHighestBidderId()).isEqualTo(BIDDER_ID);
     }
 
+    /**
+     * The bug this locks down: an Auction created with a future startAt is
+     * persisted as SCHEDULED, and nothing ever flips it to OPEN. Before this
+     * fix, `placeBid` required status == OPEN literally, so such an Auction
+     * was permanently unbiddable even after its start time passed.
+     */
+    @Test
+    void bidSucceedsOnceAScheduledAuctionsStartTimeHasPassed() throws Exception {
+        Auction auction = auctionRepository.findById(auctionId).orElseThrow();
+        auction.setStatus(AuctionStatus.SCHEDULED);
+        auctionRepository.saveAndFlush(auction);
+
+        placeBid(BIDDER_ID, "150.00").andExpect(status().isCreated());
+
+        assertThat(auctionRepository.findById(auctionId).orElseThrow().getHighestBidderId())
+                .isEqualTo(BIDDER_ID);
+    }
+
     @Test
     void bidBelowTheMinimumIncrementIsBalked() throws Exception {
         placeBid(BIDDER_ID, "150.00").andExpect(status().isCreated());

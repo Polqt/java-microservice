@@ -56,6 +56,48 @@ class AuctionReadApiTest {
                 .andExpect(jsonPath("$.endAt").exists());
     }
 
+    /**
+     * The read side of the same bug `bidSucceedsOnceAScheduledAuctionsStartTimeHasPassed`
+     * locks down for bidding: the stored status never flips from SCHEDULED to OPEN,
+     * so the read must derive effective status rather than reporting the raw column.
+     * A ticket-03 requirement — this and bid acceptance must never disagree.
+     */
+    @Test
+    void aScheduledAuctionPastItsStartTimeReadsAsOpen() throws Exception {
+        Auction auction = new Auction();
+        auction.setSellerId(SELLER_ID);
+        auction.setTitle("Vintage film camera");
+        auction.setStartingPrice(new BigDecimal("100.00"));
+        auction.setCurrentPrice(new BigDecimal("100.00"));
+        auction.setMinIncrement(new BigDecimal("10.00"));
+        auction.setStatus(AuctionStatus.SCHEDULED);
+        auction.setStartAt(LocalDateTime.now().minusHours(1));
+        auction.setEndAt(LocalDateTime.now().plusHours(1));
+        String auctionId = auctionRepository.saveAndFlush(auction).getId();
+
+        mockMvc.perform(get("/api/auctions/{auctionId}", auctionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    void aScheduledAuctionBeforeItsStartTimeStillReadsAsScheduled() throws Exception {
+        Auction auction = new Auction();
+        auction.setSellerId(SELLER_ID);
+        auction.setTitle("Vintage film camera");
+        auction.setStartingPrice(new BigDecimal("100.00"));
+        auction.setCurrentPrice(new BigDecimal("100.00"));
+        auction.setMinIncrement(new BigDecimal("10.00"));
+        auction.setStatus(AuctionStatus.SCHEDULED);
+        auction.setStartAt(LocalDateTime.now().plusHours(1));
+        auction.setEndAt(LocalDateTime.now().plusHours(2));
+        String auctionId = auctionRepository.saveAndFlush(auction).getId();
+
+        mockMvc.perform(get("/api/auctions/{auctionId}", auctionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SCHEDULED"));
+    }
+
     @Test
     void readingAnUnknownAuctionIsNotFound() throws Exception {
         mockMvc.perform(get("/api/auctions/{auctionId}", UUID.randomUUID().toString()))

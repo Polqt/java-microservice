@@ -118,8 +118,13 @@ public class AuctionService {
 
         LocalDateTime now = LocalDateTime.now();
 
+        // status == CLOSED, not status != OPEN: an Auction created with a future
+        // startAt is persisted as SCHEDULED and nothing ever flips it to OPEN, so
+        // requiring the literal OPEN value left it permanently unbiddable once its
+        // start time passed. The window bounds below are the real gate; status only
+        // needs to rule out a manually Closed Auction.
         boolean outsideOpenWindow =
-                auction.getStatus() != AuctionStatus.OPEN
+                auction.getStatus() == AuctionStatus.CLOSED
                 || now.isBefore(auction.getStartAt())
                 || !now.isBefore(auction.getEndAt());
 
@@ -282,10 +287,31 @@ public class AuctionService {
                 auction.getStartingPrice(),
                 auction.getCurrentPrice(),
                 auction.getMinIncrement(),
-                auction.getStatus(),
+                effectiveStatus(auction, LocalDateTime.now()),
                 auction.getStartAt(),
                 auction.getEndAt()
         );
+    }
+
+    /**
+     * The status a reader should see, matching what placeBid's window gate actually
+     * allows: SCHEDULED before startAt, OPEN once the window has opened (regardless of
+     * the stored column — see the comment in placeBid), CLOSED once manually Closed.
+     *
+     * ponytail: does not report anything distinct once endAt has passed without a
+     * manual Close — the stored status (still OPEN) is returned as-is, matching
+     * pre-existing behavior. Bid acceptance already rejects via the endAt check
+     * independently, so this is a display gap, not a bidding one. Revisit only if a
+     * ticket asks for it.
+     */
+    private AuctionStatus effectiveStatus(Auction auction, LocalDateTime now) {
+        if (auction.getStatus() == AuctionStatus.CLOSED) {
+            return AuctionStatus.CLOSED;
+        }
+        if (now.isBefore(auction.getStartAt())) {
+            return AuctionStatus.SCHEDULED;
+        }
+        return AuctionStatus.OPEN;
     }
 
     private CloseAuctionResponse toCloseAuctionResponse(Auction auction, Deal deal) {
