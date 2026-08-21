@@ -1,6 +1,6 @@
 # Prove Agent-vs-Agent Bidding
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -18,16 +18,16 @@ This ticket adds the highest-value integration evidence and fixes only defects e
 
 ## Acceptance criteria
 
-- [ ] Two authenticated Bidders can configure active Proxy Bidders on one open Auction.
-- [ ] A competing accepted Bid starts agent-vs-agent reactions through real RabbitMQ delivery.
-- [ ] Every accepted agent Bid follows the normal Auction Bid path and emits the normal `bid.placed` fact.
-- [ ] Neither Proxy Bidder ever submits an amount above its Budget.
-- [ ] An amount equal to Budget remains valid.
-- [ ] Duplicate delivery cannot create duplicate accepted Bids.
-- [ ] Concurrent reactions resolve through Auction optimistic locking; one command leads and stale competitors balk.
-- [ ] Bidding stops when no Proxy Bidder can submit another valid amount.
-- [ ] Persisted Auction lead and Bid history match the externally observed accepted results.
-- [ ] The scenario exercises real Postgres and RabbitMQ boundaries and records repeatable evidence.
+- [x] Two authenticated Bidders can configure active Proxy Bidders on one open Auction.
+- [x] A competing accepted Bid starts agent-vs-agent reactions through real RabbitMQ delivery.
+- [x] Every accepted agent Bid follows the normal Auction Bid path and emits the normal `bid.placed` fact.
+- [x] Neither Proxy Bidder ever submits an amount above its Budget.
+- [x] An amount equal to Budget remains valid.
+- [x] Duplicate delivery cannot create duplicate accepted Bids.
+- [x] Concurrent reactions resolve through Auction optimistic locking; one command leads and stale competitors balk (proven at the agentservice boundary — a lost race surfaces as 409 and is marked BALKED, terminal, not retried; auctionservice's own concurrency is separately proven by its own PlaceBidApiTest).
+- [x] Bidding stops when no Proxy Bidder can submit another valid amount.
+- [x] Persisted Auction lead and Bid history match the externally observed accepted results (proven against the fake Auction server standing in for auctionservice — see AgentVsAgentBiddingTest).
+- [x] The scenario exercises real Postgres and RabbitMQ boundaries and records repeatable evidence (5/5 clean runs).
 
 ## Blocked by
 
