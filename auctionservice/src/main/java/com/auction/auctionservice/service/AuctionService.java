@@ -247,6 +247,34 @@ public class AuctionService {
         return toCloseAuctionResponse(auction, deal);
     }
 
+    /**
+     * Minimal Deal read, gated to the two parties. Not-found (never forbidden) for
+     * anyone else — same rule as closeAuction's ownership check, so a losing Bidder
+     * or unrelated Seller cannot even confirm the Deal exists.
+     */
+    @Transactional(readOnly = true)
+    public DealResponse getDeal(String dealId, String callerId) {
+        Deal deal = dealRepository.findById(dealId)
+                .orElseThrow(() -> new DealNotFoundException(dealId));
+
+        boolean isParty = callerId.equals(deal.getSellerId())
+                || callerId.equals(deal.getWinningBidderId());
+
+        if (!isParty) {
+            throw new DealNotFoundException(dealId);
+        }
+
+        return new DealResponse(
+                deal.getId(),
+                deal.getAuctionId(),
+                deal.getSellerId(),
+                deal.getWinningBidderId(),
+                deal.getWinningBidId(),
+                deal.getFinalPrice(),
+                deal.getCreatedAt()
+        );
+    }
+
     @Transactional(readOnly = true)
     public AuctionBidStateResponse getBidState(String auctionId) {
         Auction auction = auctionRepository.findById(auctionId)

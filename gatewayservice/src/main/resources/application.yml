@@ -20,6 +20,11 @@ spring:
               predicates:
                 - Path=/api/auctions/**
 
+            - id: auctionservice-deals
+              uri: lb://auctionservice
+              predicates:
+                - Path=/api/deals/**
+
   security:
     oauth2:
       resourceserver:
