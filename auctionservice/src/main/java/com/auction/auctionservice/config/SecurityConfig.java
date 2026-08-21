@@ -31,6 +31,10 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
+                        // Browse and read are public — a Bidder must be able to look
+                        // before signing in. Only these two GET shapes; "*" is one
+                        // path segment, so it does not reach /{id}/bids or /mine.
+                        .requestMatchers(HttpMethod.GET, "/api/auctions", "/api/auctions/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auctions/*/bids")
                         .hasRole("BIDDER")
                         .anyRequest().authenticated()

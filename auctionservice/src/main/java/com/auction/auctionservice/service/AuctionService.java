@@ -19,7 +19,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import com.auction.auctionservice.event.BidPlacedEvent;
+
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -28,10 +32,38 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuctionService {
 
+    /** Server-side ceiling — a client's requested page size can widen, never past this. */
+    private static final int MAX_PAGE_SIZE = 50;
+
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final DealRepository dealRepository;
+
+    @Transactional(readOnly = true)
+    public AuctionResponse getAuction(String auctionId) {
+        Auction auction = auctionRepository.findById(auctionId)
+                .orElseThrow(() -> new AuctionNotFoundException(auctionId));
+        return toAuctionResponse(auction);
+    }
+
+    /** Public browse. Defaults to OPEN when no status is given (spec: browsing hides finished work by default). */
+    @Transactional(readOnly = true)
+    public AuctionPageResponse browseAuctions(AuctionStatus status, int page, int size) {
+        AuctionStatus effectiveStatus = status != null ? status : AuctionStatus.OPEN;
+        int boundedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(Math.max(page, 0), boundedSize);
+
+        Page<Auction> result = auctionRepository.findByStatus(effectiveStatus, pageable);
+
+        return new AuctionPageResponse(
+                result.getContent().stream().map(this::toAuctionResponse).toList(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages()
+        );
+    }
 
     @Transactional
     public AuctionResponse createAuction(String sellerId, CreateAuctionRequest request) {

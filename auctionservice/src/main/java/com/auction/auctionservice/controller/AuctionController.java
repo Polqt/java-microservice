@@ -1,6 +1,7 @@
 package com.auction.auctionservice.controller;
 
 import com.auction.auctionservice.dto.*;
+import com.auction.auctionservice.model.AuctionStatus;
 import com.auction.auctionservice.service.AuctionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,21 @@ import java.net.URI;
 public class AuctionController {
 
     private final AuctionService auctionService;
+
+    /** Public — no Authorization header required. Defaults to OPEN Auctions. */
+    @GetMapping
+    public ResponseEntity<AuctionPageResponse> browseAuctions(
+            @RequestParam(required = false) AuctionStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(auctionService.browseAuctions(status, page, size));
+    }
+
+    /** Public — no Authorization header required. */
+    @GetMapping("/{auctionId}")
+    public ResponseEntity<AuctionResponse> getAuction(@PathVariable String auctionId) {
+        return ResponseEntity.ok(auctionService.getAuction(auctionId));
+    }
 
     @PostMapping("/{auctionId}/bids")
     public ResponseEntity<BidResponse> placeBid(@PathVariable String auctionId, @Valid @RequestBody PlaceBidRequest request, @AuthenticationPrincipal Jwt jwt) {
