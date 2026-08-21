@@ -98,6 +98,31 @@ class AuctionReadApiTest {
                 .andExpect(jsonPath("$.status").value("SCHEDULED"));
     }
 
+    /**
+     * The gap a code review found: effectiveStatus checked startAt but not endAt, so
+     * an Auction whose window had ended without a manual Close still read OPEN via
+     * GET while placeBid correctly rejected a Bid against it — exactly the
+     * disagreement ticket 03 forbids. Locks down the fix (both now derive from the
+     * same shared method).
+     */
+    @Test
+    void anAuctionPastItsEndTimeReadsAsClosedEvenWithoutAManualClose() throws Exception {
+        Auction auction = new Auction();
+        auction.setSellerId(SELLER_ID);
+        auction.setTitle("Vintage film camera");
+        auction.setStartingPrice(new BigDecimal("100.00"));
+        auction.setCurrentPrice(new BigDecimal("100.00"));
+        auction.setMinIncrement(new BigDecimal("10.00"));
+        auction.setStatus(AuctionStatus.OPEN);
+        auction.setStartAt(LocalDateTime.now().minusHours(2));
+        auction.setEndAt(LocalDateTime.now().minusMinutes(1));
+        String auctionId = auctionRepository.saveAndFlush(auction).getId();
+
+        mockMvc.perform(get("/api/auctions/{auctionId}", auctionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
     @Test
     void readingAnUnknownAuctionIsNotFound() throws Exception {
         mockMvc.perform(get("/api/auctions/{auctionId}", UUID.randomUUID().toString()))
@@ -108,12 +133,56 @@ class AuctionReadApiTest {
     void browsingDefaultsToOpenAuctionsOnly() throws Exception {
         String openId = seedAuction(AuctionStatus.OPEN);
         seedAuction(AuctionStatus.CLOSED);
-        seedAuction(AuctionStatus.SCHEDULED);
+
+        // seedAuction always gives a past startAt, which would make a "SCHEDULED"
+        // auction here actually effectively open (its window has started) — not what
+        // this test means by "still scheduled". A genuinely scheduled Auction needs
+        // a future startAt, so it is seeded directly instead.
+        Auction stillScheduled = new Auction();
+        stillScheduled.setSellerId(SELLER_ID);
+        stillScheduled.setTitle("Not yet started");
+        stillScheduled.setStartingPrice(new BigDecimal("100.00"));
+        stillScheduled.setCurrentPrice(new BigDecimal("100.00"));
+        stillScheduled.setMinIncrement(new BigDecimal("10.00"));
+        stillScheduled.setStatus(AuctionStatus.SCHEDULED);
+        stillScheduled.setStartAt(LocalDateTime.now().plusHours(1));
+        stillScheduled.setEndAt(LocalDateTime.now().plusHours(2));
+        auctionRepository.saveAndFlush(stillScheduled);
 
         mockMvc.perform(get("/api/auctions"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(openId));
+    }
+
+    /**
+     * The other gap the same review found: browseAuctions filtered on the raw
+     * stored column, so a SCHEDULED Auction whose window had already opened —
+     * genuinely biddable, and reported OPEN by the single-item read — never
+     * appeared under the default OPEN browse filter at all. Locks down the fix
+     * (browse now widens to every raw status that could resolve to OPEN, then
+     * filters by the same effectiveStatus the single read and placeBid use).
+     */
+    @Test
+    void browsingForOpenIncludesAScheduledAuctionPastItsStartTime() throws Exception {
+        Auction scheduledButStarted = new Auction();
+        scheduledButStarted.setSellerId(SELLER_ID);
+        scheduledButStarted.setTitle("Scheduled, but its window already opened");
+        scheduledButStarted.setStartingPrice(new BigDecimal("100.00"));
+        scheduledButStarted.setCurrentPrice(new BigDecimal("100.00"));
+        scheduledButStarted.setMinIncrement(new BigDecimal("10.00"));
+        scheduledButStarted.setStatus(AuctionStatus.SCHEDULED);
+        scheduledButStarted.setStartAt(LocalDateTime.now().minusMinutes(1));
+        scheduledButStarted.setEndAt(LocalDateTime.now().plusHours(1));
+        String scheduledButStartedId = auctionRepository.saveAndFlush(scheduledButStarted).getId();
+
+        seedAuction(AuctionStatus.CLOSED);
+
+        mockMvc.perform(get("/api/auctions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(scheduledButStartedId))
+                .andExpect(jsonPath("$.content[0].status").value("OPEN"));
     }
 
     @Test

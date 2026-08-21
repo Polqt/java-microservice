@@ -14,6 +14,17 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    /**
+     * Mirrors auctionservice's own rule — the gateway must not demand a token for
+     * something auctionservice itself serves publicly.
+     *
+     * Duplicated verbatim in auctionservice's own SecurityConfig. These are two
+     * independently deployed services with no shared module for one predicate, so
+     * this is a deliberate, acknowledged duplication, not an oversight. If either
+     * changes, update both.
+     */
+    private static final String[] PUBLIC_AUCTION_READ_PATHS = {"/api/auctions", "/api/auctions/*"};
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) {
         return http
@@ -23,9 +34,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
-                        // Mirrors auctionservice's own rule — the gateway must not demand
-                        // a token for something auctionservice itself serves publicly.
-                        .requestMatchers(HttpMethod.GET, "/api/auctions", "/api/auctions/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_AUCTION_READ_PATHS).permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

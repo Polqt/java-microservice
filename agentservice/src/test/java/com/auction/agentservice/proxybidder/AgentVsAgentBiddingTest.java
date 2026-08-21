@@ -9,15 +9,21 @@ import com.auction.agentservice.auction.AuctionBidStateResponse;
 import com.auction.agentservice.auction.AuctionStatus;
 import com.auction.agentservice.config.RabbitConfig;
 import com.auction.agentservice.event.BidPlacedEvent;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
@@ -34,6 +40,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Ticket 08 — the standout evidence: two Proxy Bidders competing on one Auction,
@@ -49,6 +58,7 @@ import static org.mockito.Mockito.verify;
  * drives the next round — the actual mechanism under test.
  */
 @SpringBootTest
+@AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class AgentVsAgentBiddingTest {
 
@@ -56,6 +66,9 @@ class AgentVsAgentBiddingTest {
     private static final String BIDDER_A = "bidder-a";
     private static final String BIDDER_B = "bidder-b";
     private static final BigDecimal MIN_INCREMENT = new BigDecimal("100.00");
+
+    @Autowired
+    private MockMvc mockMvc;
 
     @Autowired
     private ProxyBidderRepository proxyBidderRepository;
@@ -85,19 +98,25 @@ class AgentVsAgentBiddingTest {
      * the repository returns first on a given pass (traced by hand for both orders;
      * the settlement price differs slightly by order — 4500 or 4600 — but the final
      * leader does not), so the assertions below only pin what is actually invariant.
+     *
+     * Both Proxy Bidders are created through the real authenticated
+     * {@code POST /api/proxy-bidders} endpoint (ticket 08's own opening criterion:
+     * "Two authenticated Bidders can configure active Proxy Bidders") rather than
+     * seeded directly — the repository-seeding shortcut used by the other tests in
+     * this class would leave that criterion unproven.
      */
     @Test
-    void twoProxyBiddersEscalateThroughRealRabbitMqUntilTheLowerBudgetIsPricedOut() {
-        ProxyBidder bidderA = proxyBidderRepository.saveAndFlush(
-                new ProxyBidder(AUCTION_ID, BIDDER_A, new BigDecimal("4500.00")));
-        ProxyBidder bidderB = proxyBidderRepository.saveAndFlush(
-                new ProxyBidder(AUCTION_ID, BIDDER_B, new BigDecimal("5000.00")));
-
+    void twoProxyBiddersEscalateThroughRealRabbitMqUntilTheLowerBudgetIsPricedOut() throws Exception {
         FakeAuctionServer fake = new FakeAuctionServer(
                 AUCTION_ID, new BigDecimal("4000.00"), "human-bidder", MIN_INCREMENT, rabbitTemplate);
         given(stateClient.getBidState(AUCTION_ID)).willAnswer(invocation -> fake.currentState());
         given(commandClient.placeBid(anyString(), any()))
                 .willAnswer(invocation -> fake.placeBid(invocation.getArgument(1)));
+
+        String bidderAId = createProxyBidder(BIDDER_A, "4500.00");
+        String bidderBId = createProxyBidder(BIDDER_B, "5000.00");
+        ProxyBidder bidderA = proxyBidderRepository.findById(bidderAId).orElseThrow();
+        ProxyBidder bidderB = proxyBidderRepository.findById(bidderBId).orElseThrow();
 
         UUID initialEventId = UUID.randomUUID();
         publishHumanBid(initialEventId, new BigDecimal("4000.00"));
@@ -239,6 +258,23 @@ class AgentVsAgentBiddingTest {
         });
 
         verify(commandClient, times(1)).placeBid(anyString(), any());
+    }
+
+    /** Real, authenticated Proxy Bidder creation — see the Javadoc on the main scenario test. */
+    private String createProxyBidder(String bidderId, String budget) throws Exception {
+        String body = mockMvc.perform(post("/api/proxy-bidders")
+                        .with(bidder(bidderId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"auctionId\": \"" + AUCTION_ID + "\", \"budget\": " + budget + "}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.id");
+    }
+
+    private static RequestPostProcessor bidder(String bidderId) {
+        return jwt()
+                .jwt(token -> token.subject(bidderId))
+                .authorities(new SimpleGrantedAuthority("ROLE_BIDDER"));
     }
 
     private void publishHumanBid(UUID eventId, BigDecimal amount) {

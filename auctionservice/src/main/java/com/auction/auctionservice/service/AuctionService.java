@@ -21,11 +21,12 @@ import java.time.LocalDateTime;
 import com.auction.auctionservice.event.BidPlacedEvent;
 
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -34,6 +35,16 @@ public class AuctionService {
 
     /** Server-side ceiling — a client's requested page size can widen, never past this. */
     private static final int MAX_PAGE_SIZE = 50;
+
+    /**
+     * Safety cap on how many candidate rows browseAuctions loads before filtering by
+     * effective status in Java. ponytail: this repo has no other query needing more
+     * than that, and no scheduler to keep a derived-status column in sync — a raw SQL
+     * equality on `status` can't express "OPEN or SCHEDULED-but-already-started", so
+     * filtering in Java is the honest choice here, bounded so it can't ever load the
+     * whole table unbounded. Revisit if this becomes a real production dataset size.
+     */
+    private static final int MAX_BROWSE_CANDIDATES = 1000;
 
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
@@ -50,18 +61,35 @@ public class AuctionService {
     /** Public browse. Defaults to OPEN when no status is given (spec: browsing hides finished work by default). */
     @Transactional(readOnly = true)
     public AuctionPageResponse browseAuctions(AuctionStatus status, int page, int size) {
-        AuctionStatus effectiveStatus = status != null ? status : AuctionStatus.OPEN;
+        AuctionStatus requestedStatus = status != null ? status : AuctionStatus.OPEN;
         int boundedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        Pageable pageable = PageRequest.of(Math.max(page, 0), boundedSize);
+        int boundedPage = Math.max(page, 0);
+        LocalDateTime now = LocalDateTime.now();
 
-        Page<Auction> result = auctionRepository.findByStatus(effectiveStatus, pageable);
+        // A raw equality on the stored column can't express "OPEN or SCHEDULED whose
+        // window already opened" — the same case that made bidding disagree with
+        // reads before. Widen to every raw status that could resolve to the one
+        // asked for, then filter by the same effectiveStatus placeBid gates on, so
+        // browsing can never disagree with what a Bid on the same row would do.
+        List<Auction> candidates = auctionRepository.findByStatusIn(
+                candidateRawStatusesFor(requestedStatus),
+                PageRequest.of(0, MAX_BROWSE_CANDIDATES)
+        );
+
+        List<Auction> matching = candidates.stream()
+                .filter(auction -> effectiveStatus(auction, now) == requestedStatus)
+                .toList();
+
+        int fromIndex = Math.min(boundedPage * boundedSize, matching.size());
+        int toIndex = Math.min(fromIndex + boundedSize, matching.size());
+        int totalPages = (int) Math.ceil((double) matching.size() / boundedSize);
 
         return new AuctionPageResponse(
-                result.getContent().stream().map(this::toAuctionResponse).toList(),
-                result.getNumber(),
-                result.getSize(),
-                result.getTotalElements(),
-                result.getTotalPages()
+                matching.subList(fromIndex, toIndex).stream().map(this::toAuctionResponse).toList(),
+                boundedPage,
+                boundedSize,
+                matching.size(),
+                totalPages
         );
     }
 
@@ -118,17 +146,11 @@ public class AuctionService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // status == CLOSED, not status != OPEN: an Auction created with a future
-        // startAt is persisted as SCHEDULED and nothing ever flips it to OPEN, so
-        // requiring the literal OPEN value left it permanently unbiddable once its
-        // start time passed. The window bounds below are the real gate; status only
-        // needs to rule out a manually Closed Auction.
-        boolean outsideOpenWindow =
-                auction.getStatus() == AuctionStatus.CLOSED
-                || now.isBefore(auction.getStartAt())
-                || !now.isBefore(auction.getEndAt());
-
-        if (outsideOpenWindow) {
+        // Single shared derivation with the read path (effectiveStatus) — these two
+        // independently re-implementing "is this Auction open" is exactly what let
+        // them drift apart before: this check didn't look past endAt, so a read could
+        // say OPEN for an Auction that had already stopped accepting Bids.
+        if (effectiveStatus(auction, now) != AuctionStatus.OPEN) {
             throw new AuctionNotOpenException(auctionId);
         }
 
@@ -322,15 +344,12 @@ public class AuctionService {
     }
 
     /**
-     * The status a reader should see, matching what placeBid's window gate actually
-     * allows: SCHEDULED before startAt, OPEN once the window has opened (regardless of
-     * the stored column — see the comment in placeBid), CLOSED once manually Closed.
-     *
-     * ponytail: does not report anything distinct once endAt has passed without a
-     * manual Close — the stored status (still OPEN) is returned as-is, matching
-     * pre-existing behavior. Bid acceptance already rejects via the endAt check
-     * independently, so this is a display gap, not a bidding one. Revisit only if a
-     * ticket asks for it.
+     * The single source of truth for "is this Auction open right now" — used by both
+     * placeBid's gate and every read, so they cannot independently drift apart again.
+     * SCHEDULED before startAt; OPEN once the window has opened (regardless of the
+     * stored column); CLOSED once manually Closed, and also once endAt has passed
+     * without a manual Close — bidding is already refused at that point, so reporting
+     * anything else would be exactly the disagreement this method exists to prevent.
      */
     private AuctionStatus effectiveStatus(Auction auction, LocalDateTime now) {
         if (auction.getStatus() == AuctionStatus.CLOSED) {
@@ -339,7 +358,24 @@ public class AuctionService {
         if (now.isBefore(auction.getStartAt())) {
             return AuctionStatus.SCHEDULED;
         }
+        if (!now.isBefore(auction.getEndAt())) {
+            return AuctionStatus.CLOSED;
+        }
         return AuctionStatus.OPEN;
+    }
+
+    /**
+     * Which raw stored statuses could ever resolve to the given effective status —
+     * see effectiveStatus(). Only OPEN needs widening beyond its own literal value:
+     * a SCHEDULED row whose window has opened, or an OPEN row whose window has
+     * ended, are the two cases a plain equality query on the stored column misses.
+     */
+    private static Set<AuctionStatus> candidateRawStatusesFor(AuctionStatus requestedEffectiveStatus) {
+        return switch (requestedEffectiveStatus) {
+            case OPEN -> EnumSet.of(AuctionStatus.SCHEDULED, AuctionStatus.OPEN);
+            case SCHEDULED -> EnumSet.of(AuctionStatus.SCHEDULED);
+            case CLOSED -> EnumSet.allOf(AuctionStatus.class);
+        };
     }
 
     private CloseAuctionResponse toCloseAuctionResponse(Auction auction, Deal deal) {

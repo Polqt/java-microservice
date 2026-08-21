@@ -22,6 +22,18 @@ import java.util.Map;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    /**
+     * Browse and read are public — a Bidder must be able to look before signing in.
+     * "*" is one path segment, so it does not reach /{id}/bids or /mine.
+     *
+     * Duplicated verbatim in gatewayservice's own SecurityConfig, which validates
+     * the same JWT before this service ever sees the request — these are two
+     * independently deployed services with no shared module for one predicate, so
+     * this is a deliberate, acknowledged duplication, not an oversight. If either
+     * changes, update both.
+     */
+    private static final String[] PUBLIC_AUCTION_READ_PATHS = {"/api/auctions", "/api/auctions/*"};
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
@@ -31,10 +43,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
-                        // Browse and read are public — a Bidder must be able to look
-                        // before signing in. Only these two GET shapes; "*" is one
-                        // path segment, so it does not reach /{id}/bids or /mine.
-                        .requestMatchers(HttpMethod.GET, "/api/auctions", "/api/auctions/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_AUCTION_READ_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auctions/*/bids")
                         .hasRole("BIDDER")
                         .anyRequest().authenticated()

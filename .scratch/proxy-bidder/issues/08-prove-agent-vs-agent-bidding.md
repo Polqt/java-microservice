@@ -18,7 +18,7 @@ This ticket adds the highest-value integration evidence and fixes only defects e
 
 ## Acceptance criteria
 
-- [x] Two authenticated Bidders can configure active Proxy Bidders on one open Auction.
+- [x] Two authenticated Bidders can configure active Proxy Bidders on one open Auction (both created via the real, authenticated `POST /api/proxy-bidders` endpoint through MockMvc — a code review found the first version seeded ProxyBidder rows directly, leaving this half of the criterion unproven; fixed).
 - [x] A competing accepted Bid starts agent-vs-agent reactions through real RabbitMQ delivery.
 - [x] Every accepted agent Bid follows the normal Auction Bid path and emits the normal `bid.placed` fact.
 - [x] Neither Proxy Bidder ever submits an amount above its Budget.
