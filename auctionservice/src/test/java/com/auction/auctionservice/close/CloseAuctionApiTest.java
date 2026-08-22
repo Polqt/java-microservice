@@ -172,12 +172,17 @@ class CloseAuctionApiTest {
                 .isEqualTo(AuctionStatus.OPEN);
     }
 
+    /**
+     * Not-found, not forbidden: a foreign caller must not even learn the Auction
+     * exists. Same rule DealNotFoundException and edit/cancel already state — this
+     * used to be the one holdout returning 403, fixed to match.
+     */
     @Test
     void onlyTheOwningSellerMayClose() throws Exception {
         auctionId = endedAuction();
         seedWinningBid(WINNER_ID, "150.00");
 
-        closeAs("someone-else").andExpect(status().isForbidden());
+        closeAs("someone-else").andExpect(status().isNotFound());
 
         assertThat(auctionRepository.findById(auctionId).orElseThrow().getStatus())
                 .describedAs("a foreign caller must not close the Auction")

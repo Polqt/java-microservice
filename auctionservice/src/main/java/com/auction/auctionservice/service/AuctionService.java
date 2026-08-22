@@ -209,10 +209,10 @@ public class AuctionService {
         Auction auction = auctionRepository.findById(auctionId)
                 .orElseThrow(() -> new AuctionNotFoundException(auctionId));
 
-        // Only the owning Seller may close. Checked here, not in the controller,
-        // this is the only place holding the persisted auction.
+        // Only the owning Seller may close. Not-found, not forbidden — same rule
+        // DealNotFoundException and edit/cancel's ownership checks already state.
         if (!callerId.equals(auction.getSellerId())) {
-            throw new NotAuctionOwnerException(auctionId);
+            throw new AuctionNotFoundException(auctionId);
         }
 
         if (auction.getStatus() == AuctionStatus.CLOSED) {
@@ -411,9 +411,7 @@ public class AuctionService {
     /**
      * Owner-only constrained edit. Ownership mismatch reports not-found (spec: a
      * forbidden response would confirm the Auction exists to someone with no right
-     * to know) — this deliberately differs from closeAuction's existing 403, which
-     * shipped earlier under a different, since-superseded choice; left alone here as
-     * it is outside these tickets' scope and already has its own passing contract.
+     * to know) — same rule closeAuction and cancelAuction's own ownership checks use.
      */
     @Transactional
     public AuctionResponse updateAuction(String auctionId, String callerId, UpdateAuctionRequest request) {

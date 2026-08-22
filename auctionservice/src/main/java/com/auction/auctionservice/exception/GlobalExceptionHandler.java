@@ -42,11 +42,6 @@ public class GlobalExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(403), ex.getMessage());
     }
 
-    @ExceptionHandler(NotAuctionOwnerException.class)
-    public ProblemDetail handleNotAuctionOwnerException(NotAuctionOwnerException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
-    }
-
     // A lost optimistic-lock race is a normal outcome under contention, not a server fault:
     // the bid (or close) was beaten to the row. The client should re-read and decide again.
     @ExceptionHandler(OptimisticLockingFailureException.class)
