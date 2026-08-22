@@ -69,4 +69,19 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleDealNotFoundException(DealNotFoundException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
+
+    @ExceptionHandler(AuctionNotEditableException.class)
+    public ProblemDetail handleAuctionNotEditableException(AuctionNotEditableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+    }
+
+    @ExceptionHandler(BidsAlreadyPlacedException.class)
+    public ProblemDetail handleBidsAlreadyPlacedException(BidsAlreadyPlacedException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+    }
+
+    @ExceptionHandler(EndAtCannotBeShortenedException.class)
+    public ProblemDetail handleEndAtCannotBeShortenedException(EndAtCannotBeShortenedException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+    }
 }

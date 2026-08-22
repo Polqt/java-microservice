@@ -16,7 +16,12 @@ public class SecurityConfig {
 
     /**
      * Mirrors auctionservice's own rule — the gateway must not demand a token for
-     * something auctionservice itself serves publicly.
+     * something auctionservice itself serves publicly. "*" is one path segment: it
+     * does not reach /{id}/bids, but it DOES match /mine — so /mine's own rule must
+     * be declared first (authorizeHttpRequests picks the first matching rule, not
+     * the most specific one). The gateway only distinguishes public vs authenticated;
+     * it has no realm-role-aware JWT converter (unlike auctionservice's own), so
+     * role-specific enforcement (SELLER vs BIDDER) is left to auctionservice.
      *
      * Duplicated verbatim in auctionservice's own SecurityConfig. These are two
      * independently deployed services with no shared module for one predicate, so
@@ -34,6 +39,9 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auctions/mine").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/bids/mine").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/auctions/*/bids").permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_AUCTION_READ_PATHS).permitAll()
                         .anyRequest().authenticated()
                 )

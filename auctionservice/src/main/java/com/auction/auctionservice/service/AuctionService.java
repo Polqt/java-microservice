@@ -21,13 +21,17 @@ import java.time.LocalDateTime;
 import com.auction.auctionservice.event.BidPlacedEvent;
 
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -314,6 +318,178 @@ public class AuctionService {
         );
     }
 
+    /** Public — unauthenticated. Bidder identifier, amount, and timestamp only; 404 for an unknown Auction. */
+    @Transactional(readOnly = true)
+    public PageResponse<BidHistoryItem> getBidHistory(String auctionId, int page, int size) {
+        if (!auctionRepository.existsById(auctionId)) {
+            throw new AuctionNotFoundException(auctionId);
+        }
+
+        int boundedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        int boundedPage = Math.max(page, 0);
+
+        Page<Bid> bids = bidRepository.findByAuctionIdOrderByPlacedAtDesc(
+                auctionId, PageRequest.of(boundedPage, boundedSize)
+        );
+
+        return new PageResponse<>(
+                bids.getContent().stream()
+                        .map(bid -> new BidHistoryItem(bid.getBidderId(), bid.getAmount(), bid.getPlacedAt()))
+                        .toList(),
+                boundedPage,
+                boundedSize,
+                bids.getTotalElements(),
+                bids.getTotalPages()
+        );
+    }
+
+    /** Seller's own Auctions, every status, newest first. */
+    @Transactional(readOnly = true)
+    public AuctionPageResponse getMyAuctions(String sellerId, int page, int size) {
+        int boundedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        int boundedPage = Math.max(page, 0);
+
+        Page<Auction> auctions = auctionRepository.findBySellerIdOrderByCreatedAtDesc(
+                sellerId, PageRequest.of(boundedPage, boundedSize)
+        );
+
+        return new AuctionPageResponse(
+                auctions.getContent().stream().map(this::toAuctionResponse).toList(),
+                boundedPage,
+                boundedSize,
+                auctions.getTotalElements(),
+                auctions.getTotalPages()
+        );
+    }
+
+    /**
+     * One row per Auction this Bidder has ever bid on: their own most recent Bid there
+     * (prices only rise, so it is also their highest), and whether it currently leads.
+     * Same bounded-candidates-then-filter-in-Java shape as browseAuctions, for the same
+     * reason: no query can express "one row per Auction, this Bidder's own best" directly.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<MyBidSummary> getMyBids(String bidderId, int page, int size) {
+        int boundedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        int boundedPage = Math.max(page, 0);
+
+        List<Bid> candidates = bidRepository.findByBidderIdOrderByPlacedAtDesc(
+                bidderId, PageRequest.of(0, MAX_BROWSE_CANDIDATES)
+        );
+
+        Map<String, Bid> mostRecentPerAuction = new LinkedHashMap<>();
+        for (Bid bid : candidates) {
+            mostRecentPerAuction.putIfAbsent(bid.getAuctionId(), bid);
+        }
+
+        Map<String, Auction> auctionsById = auctionRepository
+                .findAllById(mostRecentPerAuction.keySet())
+                .stream()
+                .collect(Collectors.toMap(Auction::getId, auction -> auction));
+
+        List<MyBidSummary> summaries = mostRecentPerAuction.values().stream()
+                .map(bid -> {
+                    Auction auction = auctionsById.get(bid.getAuctionId());
+                    boolean leading = auction != null && bidderId.equals(auction.getHighestBidderId());
+                    return new MyBidSummary(bid.getAuctionId(), bid.getAmount(), bid.getPlacedAt(), leading);
+                })
+                .toList();
+
+        int fromIndex = Math.min(boundedPage * boundedSize, summaries.size());
+        int toIndex = Math.min(fromIndex + boundedSize, summaries.size());
+        int totalPages = (int) Math.ceil((double) summaries.size() / boundedSize);
+
+        return new PageResponse<>(
+                summaries.subList(fromIndex, toIndex),
+                boundedPage,
+                boundedSize,
+                summaries.size(),
+                totalPages
+        );
+    }
+
+    /**
+     * Owner-only constrained edit. Ownership mismatch reports not-found (spec: a
+     * forbidden response would confirm the Auction exists to someone with no right
+     * to know) — this deliberately differs from closeAuction's existing 403, which
+     * shipped earlier under a different, since-superseded choice; left alone here as
+     * it is outside these tickets' scope and already has its own passing contract.
+     */
+    @Transactional
+    public AuctionResponse updateAuction(String auctionId, String callerId, UpdateAuctionRequest request) {
+        Auction auction = auctionRepository.findById(auctionId)
+                .orElseThrow(() -> new AuctionNotFoundException(auctionId));
+
+        if (!callerId.equals(auction.getSellerId())) {
+            throw new AuctionNotFoundException(auctionId);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        AuctionStatus status = effectiveStatus(auction, now);
+        if (status == AuctionStatus.CLOSED || status == AuctionStatus.CANCELLED) {
+            throw new AuctionNotEditableException("Auction is closed or cancelled and can no longer be edited: " + auctionId);
+        }
+
+        if (request.title() != null) {
+            auction.setTitle(request.title());
+        }
+
+        boolean priceOrIncrementChange = request.startingPrice() != null || request.minIncrement() != null;
+        if (priceOrIncrementChange) {
+            if (bidRepository.existsByAuctionId(auctionId)) {
+                throw new BidsAlreadyPlacedException(
+                        "Starting price and minimum increment cannot change once a Bid exists: " + auctionId
+                );
+            }
+            if (request.startingPrice() != null) {
+                auction.setStartingPrice(request.startingPrice());
+                auction.setCurrentPrice(request.startingPrice());
+            }
+            if (request.minIncrement() != null) {
+                auction.setMinIncrement(request.minIncrement());
+            }
+        }
+
+        if (request.endAt() != null) {
+            if (request.endAt().isBefore(auction.getEndAt())) {
+                throw new EndAtCannotBeShortenedException(
+                        "endAt can only be extended, never shortened: " + auctionId
+                );
+            }
+            auction.setEndAt(request.endAt());
+        }
+
+        return toAuctionResponse(auctionRepository.saveAndFlush(auction));
+    }
+
+    /**
+     * Owner-only cancel. No hard delete anywhere — a CANCELLED Auction remains a row,
+     * readable like any other, just no longer biddable (effectiveStatus resolves it
+     * to CANCELLED directly, ahead of the time-window checks).
+     */
+    @Transactional
+    public AuctionResponse cancelAuction(String auctionId, String callerId) {
+        Auction auction = auctionRepository.findById(auctionId)
+                .orElseThrow(() -> new AuctionNotFoundException(auctionId));
+
+        if (!callerId.equals(auction.getSellerId())) {
+            throw new AuctionNotFoundException(auctionId);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (effectiveStatus(auction, now) == AuctionStatus.CLOSED) {
+            throw new AuctionNotEditableException("Auction is already closed and cannot be cancelled: " + auctionId);
+        }
+
+        if (bidRepository.existsByAuctionId(auctionId)) {
+            throw new BidsAlreadyPlacedException("Auction cannot be cancelled once a Bid exists: " + auctionId);
+        }
+
+        auction.setStatus(AuctionStatus.CANCELLED);
+
+        return toAuctionResponse(auctionRepository.saveAndFlush(auction));
+    }
+
     /** Replay of an already-placed Bid: report it as-is rather than bidding again. */
     private BidResponse toBidResponse(Bid bid) {
         Auction auction = auctionRepository.findById(bid.getAuctionId())
@@ -355,6 +531,9 @@ public class AuctionService {
         if (auction.getStatus() == AuctionStatus.CLOSED) {
             return AuctionStatus.CLOSED;
         }
+        if (auction.getStatus() == AuctionStatus.CANCELLED) {
+            return AuctionStatus.CANCELLED;
+        }
         if (now.isBefore(auction.getStartAt())) {
             return AuctionStatus.SCHEDULED;
         }
@@ -375,6 +554,7 @@ public class AuctionService {
             case OPEN -> EnumSet.of(AuctionStatus.SCHEDULED, AuctionStatus.OPEN);
             case SCHEDULED -> EnumSet.of(AuctionStatus.SCHEDULED);
             case CLOSED -> EnumSet.allOf(AuctionStatus.class);
+            case CANCELLED -> EnumSet.of(AuctionStatus.CANCELLED);
         };
     }
 

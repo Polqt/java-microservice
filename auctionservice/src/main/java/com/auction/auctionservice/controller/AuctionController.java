@@ -36,6 +36,41 @@ public class AuctionController {
         return ResponseEntity.ok(auctionService.getAuction(auctionId));
     }
 
+    /** Public — no Authorization header required. Bidder identifier, amount, timestamp only. */
+    @GetMapping("/{auctionId}/bids")
+    public ResponseEntity<PageResponse<BidHistoryItem>> getBidHistory(
+            @PathVariable String auctionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(auctionService.getBidHistory(auctionId, page, size));
+    }
+
+    @GetMapping("/mine")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<AuctionPageResponse> getMyAuctions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(auctionService.getMyAuctions(jwt.getSubject(), page, size));
+    }
+
+    @PatchMapping("/{auctionId}")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<AuctionResponse> updateAuction(
+            @PathVariable String auctionId,
+            @Valid @RequestBody UpdateAuctionRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(auctionService.updateAuction(auctionId, jwt.getSubject(), request));
+    }
+
+    @PostMapping("/{auctionId}/cancel")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<AuctionResponse> cancelAuction(
+            @PathVariable String auctionId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(auctionService.cancelAuction(auctionId, jwt.getSubject()));
+    }
+
     @PostMapping("/{auctionId}/bids")
     public ResponseEntity<BidResponse> placeBid(@PathVariable String auctionId, @Valid @RequestBody PlaceBidRequest request, @AuthenticationPrincipal Jwt jwt) {
         String bidderId = jwt.getSubject();

@@ -1,5 +1,5 @@
 package com.auction.auctionservice.model;
 
 public enum AuctionStatus {
-    SCHEDULED, OPEN, CLOSED
+    SCHEDULED, OPEN, CLOSED, CANCELLED
 }

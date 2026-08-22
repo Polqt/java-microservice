@@ -2,6 +2,7 @@ package com.auction.auctionservice.repository;
 
 import com.auction.auctionservice.model.Auction;
 import com.auction.auctionservice.model.AuctionStatus;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -16,4 +17,7 @@ public interface AuctionRepository extends JpaRepository<Auction, String> {
      * afterward, at which point a DB-level total-elements count would be wrong.
      */
     List<Auction> findByStatusIn(Set<AuctionStatus> statuses, Pageable pageable);
+
+    /** A Seller's own Auctions — every status, no effective-status filtering, real DB pagination. */
+    Page<Auction> findBySellerIdOrderByCreatedAtDesc(String sellerId, Pageable pageable);
 }

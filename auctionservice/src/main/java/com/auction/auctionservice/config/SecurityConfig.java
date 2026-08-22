@@ -24,7 +24,11 @@ public class SecurityConfig {
 
     /**
      * Browse and read are public — a Bidder must be able to look before signing in.
-     * "*" is one path segment, so it does not reach /{id}/bids or /mine.
+     * "*" is one path segment: it does not reach /{id}/bids (two segments after
+     * /api/auctions), but it DOES match /mine (one segment) — so /mine's own rule
+     * must be declared first. Spring Security's authorizeHttpRequests picks the
+     * first matching rule, not the most specific one, so declaration order here is
+     * load-bearing: reordering these two would silently make /mine public.
      *
      * Duplicated verbatim in gatewayservice's own SecurityConfig, which validates
      * the same JWT before this service ever sees the request — these are two
@@ -43,6 +47,10 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
+                        // Specific role-gated rules before the general public-read wildcard — see the comment above.
+                        .requestMatchers(HttpMethod.GET, "/api/auctions/mine").hasRole("SELLER")
+                        .requestMatchers(HttpMethod.GET, "/api/bids/mine").hasRole("BIDDER")
+                        .requestMatchers(HttpMethod.GET, "/api/auctions/*/bids").permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_AUCTION_READ_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auctions/*/bids")
                         .hasRole("BIDDER")
